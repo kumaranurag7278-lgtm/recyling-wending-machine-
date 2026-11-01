@@ -143,25 +143,78 @@ def serial_worker():
 t = threading.Thread(target=serial_worker, daemon=True)
 t.start()
 
-# Deep Learning Inference Function: Evaluates Central ROI with Waste Neural Network
+# Deep Learning & Multi-Modal Material Classifier
+# Specializing in:
+# 1. Plastic Bottles / Rs 10 Juice Bottles (Frooti, Sting, Maaza, PET Water Bottles) -> Flap 1 ('p')
+# 2. Paper Rolls / Cups / Tetra Pak -> Flap 2 ('c')
+# 3. Metal Beverage Cans / Aluminum Items (Coke, Pepsi, Red Bull, Tin) -> End Chute ('m')
+# 4. Empty Ramp / Slider Detection -> Waiting State (No servo movement)
 def run_waste_model(roi):
     if waste_net is None or roi is None or roi.size == 0:
-        return "NONE", 0.0, None, (100, 116, 139), {"plastic": 0, "paper": 0, "metal": 0}
+        return "WAITING FOR ITEM (EMPTY)", 0.0, None, (148, 163, 184), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}, False
 
-    # Preprocess image into 224x224 RGB normalized [0, 1]
-    blob = cv2.dnn.blobFromImage(roi, 1.0 / 255.0, (224, 224), swapRB=True, crop=False)
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # 1. OBJECT PRESENCE & EMPTY SLIDER FILTER
+    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 30, 90)
+    edge_pct = np.mean(edges > 0)
+    std_s = float(np.std(s))
+    std_v = float(np.std(v))
+
+    # Find prominent object contours
+    dilated = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9)), iterations=2)
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    max_c_area = max([cv2.contourArea(c) for c in contours], default=0.0)
+
+    # Empty slider condition:
+    # Bare wood/cardboard ramp has uniform texture, low color variance, and no significant contour
+    is_object_present = (max_c_area > 3500) or (std_s > 27.0) or (std_v > 24.0 and edge_pct > 0.07)
+
+    if not is_object_present:
+        return "SLIDER EMPTY (PLACE ITEM)", 0.0, None, (100, 116, 139), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}, False
+
+    # 2. NEURAL NETWORK FORWARD PASS (With PyTorch ImageNet Normalization)
+    img_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    img_norm = (img_rgb - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
+    blob = cv2.resize(img_norm, (224, 224)).transpose(2, 0, 1)[np.newaxis, ...]
     waste_net.setInput(blob)
-    logits = waste_net.forward()[0] # Shape: (8,)
+    raw = waste_net.forward()[0] # Shape (8,)
 
-    # Softmax
-    exp = np.exp(logits - np.max(logits))
-    probs = exp / np.sum(exp)
+    # 3. OPTICAL MATERIAL SIGNATURES
+    # Specular glint (intense reflection lines/highlights typical of curved plastic bottles and metallic cans)
+    glint_ratio = float(np.mean((v > 220) & (s < 70)))
+    mean_v = float(np.mean(v))
+    mean_s = float(np.mean(s))
 
-    # Class Mapping:
+    # WasteWise ONNX Classes:
     # 0: battery, 1: biological, 2: cardboard, 3: glass, 4: metal, 5: paper, 6: plastic, 7: trash
-    p_plastic = float(probs[6] + probs[3] * 0.4)
-    p_paper   = float(probs[5] + probs[2]) # Paper + Cardboard (Paper Roll)
-    p_metal   = float(probs[4] + probs[0] * 0.5)
+    p_metal = float(raw[4] + raw[0] * 0.8)
+    p_plastic = float(raw[6] + raw[3] * 0.6 + raw[7] * 0.5)
+    p_paper = float(raw[5] + raw[2] * 0.9)
+
+    # Real-World Recycling Item Fine-Tuning:
+    # Metal can or metal object:
+    if raw[4] > 0.45:
+        p_metal += 0.6
+
+    # Plastic Juice Bottle (Rs 10 Sting, Frooti, Maaza) or Water Bottle:
+    # Characterized by specular glints, transparent highlights, or vibrant drink/cap colors
+    if glint_ratio > 0.007 or (mean_s > 55.0 and mean_v > 95.0):
+        p_plastic += 0.40
+        p_paper *= 0.25
+
+    # Paper Roll / Cup / Cardboard:
+    # Pure matte diffuse texture, no specular glints, high luminance white paper or kraft cardboard
+    if glint_ratio < 0.002 and (mean_v > 150.0 and mean_s < 45.0):
+        p_paper += 0.85
+        p_plastic *= 0.20
+
+    total_p = p_plastic + p_paper + p_metal + 1e-6
+    p_plastic /= total_p
+    p_paper /= total_p
+    p_metal /= total_p
 
     prob_dict = {
         "plastic": round(p_plastic * 100, 1),
@@ -169,16 +222,16 @@ def run_waste_model(roi):
         "metal":   round(p_metal * 100, 1)
     }
 
-    # Best match
+    # Best match decision
     if p_plastic > p_paper and p_plastic > p_metal:
-        conf = min(99.0, max(85.0, p_plastic * 100 * 1.5))
-        return "PLASTIC BOTTLE", round(conf, 1), 'p', (16, 185, 129), prob_dict # Emerald
+        conf = round(p_plastic * 100, 1)
+        return "PLASTIC / JUICE BOTTLE", conf, 'p', (16, 185, 129), prob_dict, True # Emerald
     elif p_paper > p_plastic and p_paper > p_metal:
-        conf = min(99.0, max(85.0, p_paper * 100 * 1.4))
-        return "PAPER ROLL / CARDBOARD", round(conf, 1), 'c', (245, 158, 11), prob_dict # Amber
+        conf = round(p_paper * 100, 1)
+        return "PAPER ROLL / CUP", conf, 'c', (245, 158, 11), prob_dict, True # Amber
     else:
-        conf = min(99.0, max(85.0, p_metal * 100 * 1.5))
-        return "METAL CAN / FOIL", round(conf, 1), 'm', (59, 130, 246), prob_dict # Blue
+        conf = round(p_metal * 100, 1)
+        return "METAL BEVERAGE CAN", conf, 'm', (59, 130, 246), prob_dict, True # Blue
 
 # Live Video Stream Generator (Neural Network Real-Time Inference)
 last_auto_sort_time = 0
@@ -239,12 +292,14 @@ def generate_camera_frames():
                 # Crop ROI strictly inside the box
                 roi = frame[y1:y2, x1:x2]
 
-                # Run Deep Learning Neural Network
-                category_name, conf, sort_code, hud_color, probs = run_waste_model(roi)
+                # Run Multi-Modal AI Classifier (with Empty Slider Detection)
+                category_name, conf, sort_code, hud_color, probs, is_object_present = run_waste_model(roi)
 
                 system_state["prob_plastic"] = probs["plastic"]
                 system_state["prob_paper"]   = probs["paper"]
                 system_state["prob_metal"]   = probs["metal"]
+                system_state["predicted_class"] = category_name
+                system_state["confidence"] = conf
 
                 # Dim outside area slightly to focus attention on scanning box
                 overlay = frame.copy()
@@ -264,40 +319,51 @@ def generate_camera_frames():
                 cv2.line(frame, (x2, y2), (x2 - L, y2), hud_color, 4)
                 cv2.line(frame, (x2, y2), (x2, y2 - L), hud_color, 4)
 
-                # Top Live Classification Banner
-                system_state["predicted_class"] = category_name
-                system_state["confidence"] = conf
+                if not is_object_present:
+                    # Slider is empty: Do NOT increment counter, DO NOT actuate servos!
+                    detection_counter = 0
+                    current_candidate_code = None
+                    system_state["progress"] = 0
 
-                tag_text = f"AI CLASSIFIER: {category_name} ({conf:.1f}%)"
-                cv2.rectangle(frame, (x1, y1 - 36), (x1 + bw, y1), (15, 23, 42), -1)
-                cv2.putText(frame, tag_text, (x1 + 6, y1 - 11),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, hud_color, 2)
+                    tag_text = "READY: PLACE BOTTLE / CAN ON SLIDER"
+                    cv2.rectangle(frame, (x1, y1 - 32), (x1 + bw, y1), (15, 23, 42), -1)
+                    cv2.putText(frame, tag_text, (x1 + 10, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.44, (148, 163, 184), 1)
 
-                # Streak logic for automatic triggering
-                if sort_code == current_candidate_code:
-                    detection_counter += 1
+                    cv2.putText(frame, "[ WAITING FOR OBJECT... ]", (x1 + 48, y2 + 25),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 116, 139), 1)
                 else:
-                    current_candidate_code = sort_code
-                    detection_counter = 0
+                    # Object Present: Show target class & confidence
+                    tag_text = f"AI CLASSIFIER: {category_name} ({conf:.1f}%)"
+                    cv2.rectangle(frame, (x1, y1 - 36), (x1 + bw, y1), (15, 23, 42), -1)
+                    cv2.putText(frame, tag_text, (x1 + 6, y1 - 11),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, hud_color, 2)
 
-                progress_pct = min(100, int((detection_counter / 10) * 100))
-                system_state["progress"] = progress_pct
+                    # Streak logic for automatic triggering
+                    if sort_code == current_candidate_code:
+                        detection_counter += 1
+                    else:
+                        current_candidate_code = sort_code
+                        detection_counter = 0
 
-                # Bottom Progress Bar
-                bar_w = int((bw - 4) * (progress_pct / 100))
-                cv2.rectangle(frame, (x1 + 2, y2 + 10), (x1 + bw - 2, y2 + 24), (30, 41, 59), -1)
-                cv2.rectangle(frame, (x1 + 2, y2 + 10), (x1 + 2 + bar_w, y2 + 24), hud_color, -1)
-                cv2.putText(frame, f"LOCKING IN... {progress_pct}%", (x1 + 52, y2 + 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                    progress_pct = min(100, int((detection_counter / 10) * 100))
+                    system_state["progress"] = progress_pct
 
-                # Trigger Sort after ~1 second steady hold
-                if detection_counter >= 10 and (time.time() - last_auto_sort_time > 4.5):
-                    last_auto_sort_time = time.time()
-                    detection_counter = 0
-                    print(f"\n[NEURAL NET TRIGGER] '{category_name}' confirmed! Actuating Arduino '{sort_code}'...")
-                    if ser and ser.is_open:
-                        with ser_lock:
-                            ser.write(sort_code.encode('utf-8'))
+                    # Bottom Progress Bar
+                    bar_w = int((bw - 4) * (progress_pct / 100))
+                    cv2.rectangle(frame, (x1 + 2, y2 + 10), (x1 + bw - 2, y2 + 24), (30, 41, 59), -1)
+                    cv2.rectangle(frame, (x1 + 2, y2 + 10), (x1 + 2 + bar_w, y2 + 24), hud_color, -1)
+                    cv2.putText(frame, f"LOCKING IN... {progress_pct}%", (x1 + 52, y2 + 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+                    # Trigger Sort after ~1 second steady hold
+                    if detection_counter >= 10 and (time.time() - last_auto_sort_time > 4.5):
+                        last_auto_sort_time = time.time()
+                        detection_counter = 0
+                        print(f"\n[NEURAL NET TRIGGER] '{category_name}' confirmed! Actuating Arduino '{sort_code}'...")
+                        if ser and ser.is_open:
+                            with ser_lock:
+                                ser.write(sort_code.encode('utf-8'))
 
         if frame is None:
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
