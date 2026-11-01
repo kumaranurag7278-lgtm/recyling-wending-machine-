@@ -60,20 +60,38 @@ system_state = {
 ser = None
 ser_lock = threading.Lock()
 
-# Serial Reader Worker (Listens to Arduino Uno on COM11 at 9600 baud)
+# Auto-Detect Arduino COM Port on any PC/Laptop
+def auto_detect_arduino_port():
+    try:
+        import serial.tools.list_ports
+        ports = list(serial.tools.list_ports.comports())
+        for p in ports:
+            desc = (p.description or "").lower()
+            hwid = (p.hwid or "").lower()
+            if "arduino" in desc or "ch340" in desc or "ch341" in desc or "usb-serial" in desc or "2341:" in hwid:
+                return p.device
+        if ports:
+            return ports[0].device
+    except Exception:
+        pass
+    return system_state.get("port", "COM11")
+
+# Serial Reader Worker (Auto-connects to Arduino on whatever COM port is assigned)
 def serial_worker():
     global ser, system_state
     while True:
         try:
             if ser is None or not ser.is_open:
+                detected_port = auto_detect_arduino_port()
+                system_state["port"] = detected_port
                 try:
                     ser = serial.Serial(system_state["port"], system_state["baud"], timeout=1)
                     system_state["connected"] = True
-                    system_state["status"] = "CONNECTED TO ARDUINO (COM11)"
-                    print("[SERIAL] Connected to COM11 @ 9600 baud successfully.")
+                    system_state["status"] = f"CONNECTED TO ARDUINO ({system_state['port']})"
+                    print(f"[SERIAL] Connected to Arduino on {system_state['port']} @ 9600 baud successfully.")
                 except Exception as e:
                     system_state["connected"] = False
-                    system_state["status"] = f"DISCONNECTED: {str(e)[:25]}"
+                    system_state["status"] = f"SEARCHING ARDUINO ({system_state['port']})..."
                     time.sleep(2)
                     continue
 
