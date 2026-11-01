@@ -1,17 +1,18 @@
 /*
- * SMART RECYCLING VENDING MACHINE - MASTER CONTROLLER FIRMWARE
+ * SMART RECYCLING VENDING MACHINE - MASTER CONTROLLER FIRMWARE (DUAL-SERVO)
  * Department of AI & Data Science - Engineering Clinic
  * 
  * Hardware Mapping:
- * - Pin D2: IR Sensor 1 (Intake Staging Tray) - Active LOW
- * - Pin D3: IR Sensor 2 (Exit Chute Verification) - Active LOW
- * - Pin D4: SoftwareSerial RX (Receives AI class from ESP32-CAM TX)
- * - Pin D5: SoftwareSerial TX (Sends trigger command to ESP32-CAM RX)
- * - Pin D8: Buzzer (Active/Passive)
- * - Pin D9: Servo PWM (Central Carousel Turntable Indexer: 0° / 90° / 180°)
+ * - Pin D2:  IR Sensor 1 (Intake Staging Tray) - Active LOW
+ * - Pin D3:  IR Sensor 2 (Exit Chute Verification) - Active LOW
+ * - Pin D4:  SoftwareSerial RX (Receives AI class from ESP32-CAM TX)
+ * - Pin D5:  SoftwareSerial TX (Sends trigger command to ESP32-CAM RX)
+ * - Pin D8:  Buzzer (Active/Passive)
+ * - Pin D9:  Servo 1 PWM (Upper Stage / Plastic Diverter Flap)
+ * - Pin D10: Servo 2 PWM (Lower Stage / Metal vs Paper Selector Flap)
  * - Pin D13: Status Indicator LED
- * - Pin A4: I2C SDA (16x2 LCD)
- * - Pin A5: I2C SCL (16x2 LCD)
+ * - Pin A4:  I2C SDA (16x2 LCD)
+ * - Pin A5:  I2C SCL (16x2 LCD)
  */
 
 #include <Wire.h>
@@ -23,14 +24,16 @@
 const int PIN_IR_INTAKE  = 2;
 const int PIN_IR_CHUTE   = 3;
 const int PIN_ESP_RX     = 4;   // Connects to ESP32-CAM U0T (TX)
-const int PIN_ESP_TX     = 5;   // Connects to ESP32-CAM U0R (RX via 1k divider)
+const int PIN_ESP_TX     = 5;   // Connects to ESP32-CAM U0R (RX via divider)
 const int PIN_BUZZER     = 8;
-const int PIN_SERVO      = 9;   // Single Central Carousel Servo
+const int PIN_SERVO_1    = 9;   // Upper Servo (Plastic Flap)
+const int PIN_SERVO_2    = 10;  // Lower Servo (Metal / Paper Selector)
 const int PIN_LED_STATUS = 13;
 
 // ================= OBJECTS =================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-Servo carouselServo;
+Servo servo1;
+Servo servo2;
 SoftwareSerial espSerial(PIN_ESP_RX, PIN_ESP_TX); // RX, TX
 
 // State variables
@@ -80,9 +83,11 @@ void setup() {
   lcd.setCursor(0, 1);
   lcd.print("STABILIZING 2S..");
 
-  // Attach and zero-calibrate Single Servo (0 deg = Plastic default)
-  carouselServo.attach(PIN_SERVO);
-  carouselServo.write(0);
+  // Attach and zero-calibrate Dual Servos (both at 0 deg neutral)
+  servo1.attach(PIN_SERVO_1);
+  servo2.attach(PIN_SERVO_2);
+  servo1.write(0);
+  servo2.write(0);
 
   // Power stabilization delay (prevents adapter surge false triggers)
   delay(2000);
@@ -96,7 +101,6 @@ void setup() {
     lcd.print("ADJUST TRIMPOT");
     Serial.println(F("[WARNING] IR Sensor 1 is reading LOW on startup! Adjust potentiometer."));
     while (digitalRead(PIN_IR_INTAKE) == LOW) {
-      // Flash LED warning without sound so it doesn't irritate
       digitalWrite(PIN_LED_STATUS, HIGH);
       delay(200);
       digitalWrite(PIN_LED_STATUS, LOW);
@@ -111,7 +115,7 @@ void setup() {
 
   displayReadyScreen();
   systemReady = true;
-  Serial.println(F("[SYSTEM READY] Carousel initialized at 0 deg. Waiting for waste deposit..."));
+  Serial.println(F("[SYSTEM READY] Dual-Servo Controller initialized. Waiting for deposit..."));
 }
 
 void loop() {
@@ -179,8 +183,7 @@ void processDeposit() {
 
   executeSort(materialClass);
 
-  // CRITICAL: Wait until user removes hands / item clears IR sensor
-  // Prevents infinite loop re-triggering and non-stop buzzing!
+  // Wait until user clears sensor
   unsigned long clearWait = millis();
   while (digitalRead(PIN_IR_INTAKE) == LOW && (millis() - clearWait < 5000)) {
     lcd.setCursor(0, 1);
@@ -194,50 +197,64 @@ void processDeposit() {
 
 void executeSort(char materialClass) {
   int rewardPoints = 0;
-  int targetAngle = 0;
-
   lcd.clear();
 
   if (materialClass == 'P') {
+    // ================= CLASS 1: PLASTIC =================
     rewardPoints = 10;
-    targetAngle = 0; // 0 deg = Plastic Compartment
-    Serial.println(F("[AI RESULT] >>> CLASS: PLASTIC BOTTLE (Angle 0 deg) <<<"));
+    Serial.println(F("[AI RESULT] >>> CLASS: PLASTIC BOTTLE <<<"));
     lcd.setCursor(0, 0);
     lcd.print("CLASS: PLASTIC");
     lcd.setCursor(0, 1);
-    lcd.print("ROTATE: 0 DEG");
+    lcd.print("ROUTE: BIN 1");
+
+    // Servo 1 diverts to Plastic Bin (45 deg), Servo 2 stays neutral (0 deg)
+    servo1.write(45);
+    servo2.write(0);
+
   } else if (materialClass == 'M') {
+    // ================= CLASS 2: METAL =================
     rewardPoints = 15;
-    targetAngle = 90; // 90 deg = Metal Compartment
-    Serial.println(F("[AI RESULT] >>> CLASS: METAL CAN (Angle 90 deg) <<<"));
+    Serial.println(F("[AI RESULT] >>> CLASS: METAL CAN <<<"));
     lcd.setCursor(0, 0);
     lcd.print("CLASS: METAL CAN");
     lcd.setCursor(0, 1);
-    lcd.print("ROTATE: 90 DEG");
+    lcd.print("ROUTE: BIN 2");
+
+    // Servo 1 drops down (90 deg), Servo 2 routes to Metal Bin (45 deg)
+    servo1.write(90);
+    delay(250);
+    servo2.write(45);
+
   } else if (materialClass == 'C') {
+    // ================= CLASS 3: PAPER =================
     rewardPoints = 5;
-    targetAngle = 180; // 180 deg = Paper Compartment
-    Serial.println(F("[AI RESULT] >>> CLASS: PAPER (Angle 180 deg) <<<"));
+    Serial.println(F("[AI RESULT] >>> CLASS: PAPER CUP <<<"));
     lcd.setCursor(0, 0);
     lcd.print("CLASS: PAPER CUP");
     lcd.setCursor(0, 1);
-    lcd.print("ROTATE: 180 DEG");
+    lcd.print("ROUTE: BIN 3");
+
+    // Servo 1 drops down (90 deg), Servo 2 routes to Paper Bin (135 deg)
+    servo1.write(90);
+    delay(250);
+    servo2.write(135);
   }
 
-  // Move single servo to index carousel
-  carouselServo.write(targetAngle);
-  delay(600); // Allow servo time to rotate
-
   // Verify item passage through chute exit IR sensor
-  Serial.println(F("[CHUTE] Waiting for item to drop into compartment..."));
+  Serial.println(F("[CHUTE] Waiting for item to pass into collection bin..."));
   unsigned long chuteStart = millis();
-  while (millis() - chuteStart < 2500) {
+  while (millis() - chuteStart < 3000) {
     if (digitalRead(PIN_IR_CHUTE) == LOW) {
       Serial.println(F("[CHUTE CONFIRMED] Item verified in collection bin!"));
       break;
     }
     delay(50);
   }
+
+  // Reset both Servos to 0 deg neutral position
+  servo1.write(0);
+  servo2.write(0);
 
   // Update Score and Show Confirmation
   totalPoints += rewardPoints;
@@ -255,7 +272,4 @@ void executeSort(char materialClass) {
   beepSound(150);
   digitalWrite(PIN_LED_STATUS, LOW);
   delay(1500);
-
-  // Return carousel to 0 deg home
-  carouselServo.write(0);
 }
