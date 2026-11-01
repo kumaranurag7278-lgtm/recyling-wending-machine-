@@ -13,6 +13,33 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# =====================================================================
+# LOAD PRE-TRAINED DEEP LEARNING NEURAL NETWORK (YOLOv5 ONNX)
+# =====================================================================
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "yolov5n.onnx")
+COCO_CLASSES = [
+    'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
+    'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+    'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
+    'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+    'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
+    'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
+    'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
+    'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
+    'hair drier', 'toothbrush'
+]
+
+print(f"[AI MODEL] Loading pre-trained YOLOv5 Neural Network from '{MODEL_PATH}'...")
+try:
+    net = cv2.dnn.readNetFromONNX(MODEL_PATH)
+    # Prefer faster backend if supported
+    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+    print("[AI MODEL] YOLOv5 Deep Learning Engine Initialized Successfully!")
+except Exception as e:
+    print("[AI MODEL ERROR] Failed to load ONNX model:", e)
+    net = None
+
 # Global Telemetry & System State
 system_state = {
     "connected": False,
@@ -29,10 +56,10 @@ system_state = {
     "status": "INITIALIZING...",
     "last_updated": time.time(),
     "history": [],
-    "camera_source": "WEBCAM", # "WEBCAM" or "PHONE"
-    "camera_mode": "LAPTOP WEBCAM (Camera 0) - ACTIVE",
+    "camera_source": "WEBCAM",
+    "camera_mode": "YOLOv5 DEEP LEARNING (Laptop Webcam 0)",
     "phone_camera_url": "http://192.168.1.100:8080/video",
-    "detected_class": "SEARCHING...",
+    "detected_class": "SEARCHING FOR OBJECT...",
     "confidence": 0,
     "auto_sort_enabled": True
 }
@@ -59,17 +86,7 @@ def serial_worker():
 
             line = ser.readline().decode('utf-8', errors='ignore').strip()
             if line:
-                # 1. Parse JSON Telemetry
-                if line.startswith('{"telemetry":'):
-                    try:
-                        data = json.loads(line).get("telemetry", {})
-                        with ser_lock:
-                            for k in ["ir1", "ir2", "servo1", "servo2", "plastic", "metal", "paper", "points", "status"]:
-                                if k in data: system_state[k] = data[k]
-                    except: pass
-
-                # 2. Parse Text Telemetry: "[TELEMETRY] Total: 1 | Plastic: 1 | Paper: 0 | Metal: 0 | Points: 10"
-                elif "[TELEMETRY]" in line:
+                if "[TELEMETRY]" in line:
                     match = re.search(r'Plastic:\s*(\d+).*?Paper:\s*(\d+).*?Metal:\s*(\d+).*?Points:\s*(\d+)', line)
                     if match:
                         with ser_lock:
@@ -77,26 +94,24 @@ def serial_worker():
                             system_state["paper"]   = int(match.group(2))
                             system_state["metal"]   = int(match.group(3))
                             system_state["points"]  = int(match.group(4))
-                            system_state["status"]  = "DEPOSIT COMPLETED & LOGGED"
-
-                # 3. Parse Real-Time Event Notifications
+                            system_state["status"]  = "SORTING LOGGED & COMPLETED"
                 elif "Waste item placed" in line or "Item detected" in line:
                     with ser_lock:
                         system_state["ir1"] = 1
                         system_state["status"] = "ITEM DETECTED (RAMP START)"
                 elif "CLASS: PLASTIC" in line:
                     with ser_lock:
-                        system_state["status"] = "CLASSIFIED: PLASTIC (FLAP 1 OPEN)"
+                        system_state["status"] = "SORTING: PLASTIC (FLAP 1 OPEN)"
                         system_state["servo1"] = 90
                         system_state["servo2"] = 0
                 elif "CLASS: PAPER" in line:
                     with ser_lock:
-                        system_state["status"] = "CLASSIFIED: PAPER (FLAP 2 OPEN)"
+                        system_state["status"] = "SORTING: PAPER (FLAP 2 OPEN)"
                         system_state["servo1"] = 0
                         system_state["servo2"] = 90
                 elif "CLASS: METAL" in line:
                     with ser_lock:
-                        system_state["status"] = "CLASSIFIED: METAL (CHUTE EXIT)"
+                        system_state["status"] = "SORTING: METAL (END CHUTE)"
                         system_state["servo1"] = 0
                         system_state["servo2"] = 0
                 elif "Chute Passage Confirmed" in line or "CHUTE CONFIRMED" in line:
@@ -137,48 +152,98 @@ def serial_worker():
 t = threading.Thread(target=serial_worker, daemon=True)
 t.start()
 
-# AI Material Classifier Function (Analyzes Central Region of Interest)
-def classify_material_roi(roi):
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+# Deep Learning Inference Function (YOLOv5 Object Detection)
+def run_yolo_detection(image):
+    if net is None:
+        return []
 
-    # 1. Specular Highlights & Transparency (Plastic Bottle)
-    _, bright_thresh = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY)
-    specular_ratio = np.sum(bright_thresh > 0) / (roi.shape[0] * roi.shape[1])
-    std_dev = np.std(gray)
+    input_h, input_w = 640, 640
+    orig_h, orig_w = image.shape[:2]
 
-    # 2. Color Saturation & Warmth (Paper / Cardboard)
-    mean_sat = np.mean(hsv[:, :, 1])
-    mean_val = np.mean(hsv[:, :, 2])
-    # Brown/Cardboard/Paper hue range
-    lower_warm = np.array([10, 40, 50])
-    upper_warm = np.array([30, 255, 220])
-    warm_mask = cv2.inRange(hsv, lower_warm, upper_warm)
-    warm_ratio = np.sum(warm_mask > 0) / (roi.shape[0] * roi.shape[1])
+    # Preprocess image into 640x640 blob (scaled 1/255, swapRB for BGR to RGB)
+    blob = cv2.dnn.blobFromImage(image, 1.0 / 255.0, (input_w, input_h), swapRB=True, crop=False)
+    net.setInput(blob)
+    outputs = net.forward()[0] # Shape: (25200, 85)
 
-    # 3. Metallic/Reflective Texture (Metal Can)
-    # High edge density, medium saturation, reflective gradients
-    edges = cv2.Canny(gray, 50, 150)
-    edge_density = np.sum(edges > 0) / (roi.shape[0] * roi.shape[1])
+    boxes = []
+    confidences = []
+    class_ids = []
 
-    # Classification Heuristics
-    if warm_ratio > 0.18 or (mean_sat > 60 and mean_val < 180 and std_dev < 45):
-        confidence = min(96.0, 75.0 + (warm_ratio * 100))
-        return "PAPER / CUP", confidence, (245, 158, 11), 'c' # Amber
-    elif specular_ratio > 0.05 or (std_dev > 50 and mean_sat < 70):
-        confidence = min(98.5, 78.0 + (specular_ratio * 120))
-        return "PLASTIC BOTTLE", confidence, (16, 185, 129), 'p' # Emerald
-    else:
-        confidence = min(94.0, 72.0 + (edge_density * 150))
-        return "METAL CAN", confidence, (59, 130, 246), 'm' # Blue
+    conf_threshold = 0.35
+    score_threshold = 0.30
 
-# Live Video Stream Generator (Supports Laptop Webcam 0 & Phone IP Webcam)
+    x_factor = orig_w / input_w
+    y_factor = orig_h / input_h
+
+    for row in outputs:
+        confidence = row[4]
+        if confidence >= conf_threshold:
+            classes_scores = row[5:]
+            class_id = np.argmax(classes_scores)
+            max_score = classes_scores[class_id]
+            if max_score > score_threshold:
+                confidences.append(float(confidence * max_score))
+                class_ids.append(class_id)
+
+                cx, cy, w, h = row[0], row[1], row[2], row[3]
+                left = int((cx - 0.5 * w) * x_factor)
+                top = int((cy - 0.5 * h) * y_factor)
+                width = int(w * x_factor)
+                height = int(h * y_factor)
+                boxes.append([left, top, width, height])
+
+    # Apply Non-Maximum Suppression (NMS)
+    indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold, 0.45)
+    results = []
+    if len(indices) > 0:
+        for i in indices.flatten():
+            results.append({
+                "box": boxes[i],
+                "confidence": confidences[i],
+                "class_id": class_ids[i],
+                "label": COCO_CLASSES[class_ids[i]] if class_ids[i] < len(COCO_CLASSES) else "unknown"
+            })
+    return results
+
+# Map YOLO Objects to Recycling Vending Categories:
+# Plastic ('p'), Paper ('c'), Metal ('m')
+def map_detection_to_waste(detected_label, roi=None):
+    lbl = detected_label.lower()
+    
+    # Direct Category 1: PLASTIC
+    if any(k in lbl for k in ['bottle', 'wine glass', 'toothbrush', 'hair drier']):
+        return "PLASTIC BOTTLE", 'p', (16, 185, 129) # Emerald Green
+
+    # Direct Category 2: PAPER
+    if any(k in lbl for k in ['cup', 'book', 'dining table']):
+        return "PAPER CUP / CARDBOARD", 'c', (245, 158, 11) # Amber
+
+    # Direct Category 3: METAL
+    if any(k in lbl for k in ['can', 'tin', 'bowl', 'fork', 'knife', 'spoon', 'cell phone', 'remote', 'toaster']):
+        return "METAL CAN / FOIL", 'm', (59, 130, 246) # Blue
+
+    # If an object was detected (e.g. general container/vase/scissors)
+    if any(k in lbl for k in ['vase', 'scissors', 'clock', 'microwave']):
+        return "METAL CAN", 'm', (59, 130, 246)
+
+    # Fallback heuristic if label is generic but object is in ROI
+    if roi is not None and roi.size > 0:
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        std = np.std(gray)
+        if std > 45:
+            return "PLASTIC BOTTLE", 'p', (16, 185, 129)
+        else:
+            return "PAPER PACKET", 'c', (245, 158, 11)
+
+    return "RECYCLABLE ITEM", 'p', (16, 185, 129)
+
+# Live Video Stream Generator (YOLOv5 Neural Network Real-Time Inference)
 last_auto_sort_time = 0
-last_detected_code = None
 detected_streak = 0
+last_sort_code = None
 
 def generate_camera_frames():
-    global system_state, last_auto_sort_time, last_detected_code, detected_streak
+    global system_state, last_auto_sort_time, detected_streak, last_sort_code
     cap = None
     current_mode = ""
     current_url = ""
@@ -193,7 +258,7 @@ def generate_camera_frames():
             try:
                 if mode == "WEBCAM":
                     cap = cv2.VideoCapture(0)
-                    system_state["camera_mode"] = "LAPTOP WEBCAM (Camera 0) - LIVE"
+                    system_state["camera_mode"] = "YOLOv5 DEEP LEARNING (Laptop Webcam 0)"
                     print("[CAMERA] Opened Laptop Webcam (0)")
                 else:
                     if not target_url.startswith("http://") and not target_url.startswith("https://"):
@@ -201,7 +266,7 @@ def generate_camera_frames():
                     if not target_url.endswith("/video") and not target_url.endswith("/shot.jpg"):
                         target_url += "/video"
                     cap = cv2.VideoCapture(target_url)
-                    system_state["camera_mode"] = f"PHONE IP WEBCAM ({target_url})"
+                    system_state["camera_mode"] = f"YOLOv5 (Phone IP Cam: {target_url})"
                     print(f"[CAMERA] Connecting to Phone IP Webcam: {target_url}")
                 current_mode = mode
                 current_url = target_url
@@ -217,78 +282,107 @@ def generate_camera_frames():
                 cap = None
                 time.sleep(1)
             else:
-                # Mirror laptop webcam for natural view
                 if mode == "WEBCAM":
                     frame = cv2.flip(frame, 1)
 
                 h, w, _ = frame.shape
-                # Define Central AI Detection Region of Interest (ROI)
-                bw, bh = int(w * 0.42), int(h * 0.55)
-                x1, y1 = (w - bw) // 2, (h - bh) // 2
-                x2, y2 = x1 + bw, y1 + bh
 
-                roi = frame[y1:y2, x1:x2]
+                # 1. Run YOLOv5 Deep Learning Detection on the whole frame
+                detections = run_yolo_detection(frame)
 
-                # Run AI Classification
-                cls_name, conf, color, sort_code = classify_material_roi(roi)
-                system_state["detected_class"] = cls_name
-                system_state["confidence"] = round(conf, 1)
+                best_match = None
+                best_conf = 0.0
 
-                # Draw Target Reticle & Bounding Box
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                # Corner accents
-                length = 20
-                cv2.line(frame, (x1, y1), (x1 + length, y1), color, 4)
-                cv2.line(frame, (x1, y1), (x1, y1 + length), color, 4)
-                cv2.line(frame, (x2, y1), (x2 - length, y1), color, 4)
-                cv2.line(frame, (x2, y1), (x2, y1 + length), color, 4)
-                cv2.line(frame, (x1, y2), (x1 + length, y2), color, 4)
-                cv2.line(frame, (x1, y2), (x1, y2 - length), color, 4)
-                cv2.line(frame, (x2, y2), (x2 - length, y2), color, 4)
-                cv2.line(frame, (x2, y2), (x2, y2 - length), color, 4)
+                # Filter detections to recyclable objects
+                for d in detections:
+                    lbl = d["label"]
+                    # Ignore persons or background furniture
+                    if lbl in ['person', 'chair', 'couch', 'tv', 'laptop']:
+                        continue
 
-                # Center crosshair
-                cx, cy = w // 2, h // 2
-                cv2.circle(frame, (cx, cy), 6, color, -1)
+                    conf = d["confidence"]
+                    if conf > best_conf:
+                        best_conf = conf
+                        best_match = d
 
-                # Top Classification Label Banner
-                cv2.rectangle(frame, (x1, y1 - 32), (x1 + 320, y1), (15, 23, 42), -1)
-                hud_text = f"{cls_name} ({conf:.1f}%)"
-                cv2.putText(frame, hud_text, (x1 + 8, y1 - 9),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+                # 2. Draw detections on the frame
+                if best_match:
+                    bx, by, bw, bh = best_match["box"]
+                    # Clamp to bounds
+                    bx = max(0, bx)
+                    by = max(0, by)
+                    bw = min(bw, w - bx)
+                    bh = min(bh, h - by)
 
-                # Bottom Prompt
-                cv2.putText(frame, "HOLD OBJECT IN BOX TO SORT", (x1 + 10, y2 + 25),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (148, 163, 184), 1)
+                    roi = frame[by:by+bh, bx:bx+bw]
+                    raw_label = best_match["label"]
+                    category_name, sort_code, box_color = map_detection_to_waste(raw_label, roi)
 
-                # Auto-Trigger Arduino Sorting if object held steadily for 1.8 seconds
-                if system_state["auto_sort_enabled"]:
-                    if sort_code == last_detected_code:
-                        detected_streak += 1
-                    else:
-                        last_detected_code = sort_code
-                        detected_streak = 0
+                    system_state["detected_class"] = f"{category_name} [{raw_label.upper()}]"
+                    system_state["confidence"] = round(best_conf * 100, 1)
 
-                    if detected_streak >= 15 and (time.time() - last_auto_sort_time > 5.0):
-                        last_auto_sort_time = time.time()
-                        detected_streak = 0
-                        print(f"\n[AI AUTO-TRIGGER] Class '{cls_name}' confirmed! Sending '{sort_code}' to Arduino...")
-                        if ser and ser.is_open:
-                            with ser_lock:
-                                ser.write(sort_code.encode('utf-8'))
+                    # Draw Bounding Box & Corner Brackets
+                    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), box_color, 2)
+                    length = min(25, bw // 4, bh // 4)
+                    cv2.line(frame, (bx, by), (bx + length, by), box_color, 4)
+                    cv2.line(frame, (bx, by), (bx, by + length), box_color, 4)
+                    cv2.line(frame, (bx + bw, by), (bx + bw - length, by), box_color, 4)
+                    cv2.line(frame, (bx + bw, by), (bx + bw, by + length), box_color, 4)
+                    cv2.line(frame, (bx, by + bh), (bx + length, by + bh), box_color, 4)
+                    cv2.line(frame, (bx, by + bh), (bx, by + bh - length), box_color, 4)
+                    cv2.line(frame, (bx + bw, by + bh), (bx + bw - length, by + bh), box_color, 4)
+                    cv2.line(frame, (bx + bw, by + bh), (bx + bw, by + bh - length), box_color, 4)
+
+                    # Top Label Banner
+                    tag_text = f"YOLOv5: {category_name} ({best_conf*100:.1f}%)"
+                    cv2.rectangle(frame, (bx, max(0, by - 30)), (bx + len(tag_text) * 11, by), (15, 23, 42), -1)
+                    cv2.putText(frame, tag_text, (bx + 6, max(12, by - 8)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, box_color, 2)
+
+                    # Auto-Trigger Arduino Sorting if held steadily for 1.2 seconds (~8 frames)
+                    if system_state["auto_sort_enabled"]:
+                        if sort_code == last_sort_code:
+                            detected_streak += 1
+                        else:
+                            last_sort_code = sort_code
+                            detected_streak = 0
+
+                        if detected_streak >= 8 and (time.time() - last_auto_sort_time > 4.5):
+                            last_auto_sort_time = time.time()
+                            detected_streak = 0
+                            print(f"\n[AI CONFIRMED] Object: {raw_label} -> Waste Category: {category_name}. Sending '{sort_code}' to Arduino...")
+                            if ser and ser.is_open:
+                                with ser_lock:
+                                    ser.write(sort_code.encode('utf-8'))
+
+                else:
+                    # Draw subtle scanning reticle in center if no item detected yet
+                    cx, cy = w // 2, h // 2
+                    cw, ch = 240, 260
+                    x1, y1 = cx - cw // 2, cy - ch // 2
+                    x2, y2 = cx + cw // 2, cy + ch // 2
+
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (71, 85, 105), 1)
+                    cv2.circle(frame, (cx, cy), 6, (100, 116, 139), -1)
+                    cv2.putText(frame, "HOLD OBJECT IN FRONT OF CAMERA", (x1 - 10, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (148, 163, 184), 1)
+
+                    system_state["detected_class"] = "SCANNING FOR OBJECT..."
+                    system_state["confidence"] = 0
+                    detected_streak = 0
 
         if frame is None:
             # Standby screen if camera disconnected
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
             frame[:] = (15, 23, 42)
-            cv2.putText(frame, "INITIALIZING CAMERA...", (180, 240),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (56, 189, 248), 2)
+            cv2.putText(frame, "INITIALIZING YOLOv5 CAMERA...", (140, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (56, 189, 248), 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.04)
+        time.sleep(0.035)
 
 @app.route('/video_feed')
 def video_feed():
@@ -343,8 +437,6 @@ HTML_DASHBOARD = """
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; }
-    .pulse-glow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen p-3 md:p-6 antialiased">
@@ -358,9 +450,11 @@ HTML_DASHBOARD = """
       <div>
         <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
           Smart Recycling Vending Machine
-          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">Laptop Webcam Active</span>
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
+            <i class="fa-solid fa-brain mr-1"></i> YOLOv5 Neural Network Active
+          </span>
         </h1>
-        <p class="text-xs text-slate-400">Sequential Gravity Sorter (Plastic • Paper • Metal) — Live Telemetry & AI Recognition</p>
+        <p class="text-xs text-slate-400">Sequential Gravity Sorter (Plastic • Paper • Metal) — Real-Time Deep Learning Vision</p>
       </div>
     </div>
 
@@ -438,12 +532,12 @@ HTML_DASHBOARD = """
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-            <h2 class="text-sm font-semibold text-white">Live AI Vision Recognition (Real-Time)</h2>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+            <h2 class="text-sm font-semibold text-white">YOLOv5 Neural Object Recognition Feed</h2>
           </div>
           <div class="flex items-center gap-2">
             <span id="ai-detected-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
-              TARGET: SCANNING...
+              AI DETECTING...
             </span>
           </div>
         </div>
@@ -455,10 +549,10 @@ HTML_DASHBOARD = """
 
         <div class="mt-3 flex items-center justify-between text-xs text-slate-400">
           <div class="flex items-center gap-2">
-            <span class="text-slate-500">Live AI Output:</span>
+            <span class="text-slate-500">Hardware Status:</span>
             <span id="status-text" class="text-emerald-400 font-semibold tracking-wide">READY FOR ITEM</span>
           </div>
-          <span class="text-emerald-400 font-medium"><i class="fa-solid fa-bolt mr-1"></i> Auto-Sort Trigger: ACTIVE</span>
+          <span class="text-emerald-400 font-medium"><i class="fa-solid fa-check-double mr-1"></i> Auto-Sort To Arduino: ACTIVE</span>
         </div>
       </div>
 
@@ -466,7 +560,7 @@ HTML_DASHBOARD = """
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Manual One-Click Sort Triggers</h3>
-          <span class="text-[10px] text-slate-500">Clicking any button activates the physical servos immediately</span>
+          <span class="text-[10px] text-slate-500">Click to actuate physical servos immediately</span>
         </div>
         <div class="grid grid-cols-3 gap-3">
           <button onclick="sendCommand('p')" class="py-2.5 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95">
@@ -636,7 +730,7 @@ HTML_DASHBOARD = """
 
         // Live AI Target Badge
         const badge = document.getElementById('ai-detected-badge');
-        badge.innerText = `TARGET: ${data.detected_class} (${data.confidence}%)`;
+        badge.innerText = `${data.detected_class} (${data.confidence}%)`;
 
         // Status update
         document.getElementById('status-text').innerText = data.status.toUpperCase();
