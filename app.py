@@ -193,36 +193,39 @@ def run_waste_model(roi):
     if std_s < 22.0 and std_v < 20.0 and edge_pct < 0.05:
         return "SLIDER EMPTY (PLACE ITEM)", 0.0, None, (100, 116, 139), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}
 
-    # NEURAL NETWORK FORWARD PASS (PyTorch ImageNet Normalized)
-    img_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    img_norm = (img_rgb - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
-    blob = cv2.resize(img_norm, (224, 224)).transpose(2, 0, 1)[np.newaxis, ...]
+    # NEURAL NETWORK FORWARD PASS (Standard Ultralytics Scale 1/255.0)
+    blob = cv2.dnn.blobFromImage(roi, 1.0 / 255.0, (224, 224), swapRB=True, crop=False)
     waste_net.setInput(blob)
     raw = waste_net.forward()[0] # Shape (8,)
 
-    glint_ratio = float(np.mean((v > 220) & (s < 70)))
     mean_v = float(np.mean(v))
     mean_s = float(np.mean(s))
+    low_sat_pct = float(np.mean(s < 45)) # Diffuse white/off-white/grey matte paper
 
     # WasteWise ONNX Classes:
     # 0: battery, 1: biological, 2: cardboard, 3: glass, 4: metal, 5: paper, 6: plastic, 7: trash
-    p_metal = float(raw[4] + raw[0] * 0.8)
-    p_plastic = float(raw[6] + raw[3] * 0.6 + raw[7] * 0.5)
+    p_metal = float(raw[4] + raw[0] * 0.4)
     p_paper = float(raw[5] + raw[2] * 0.9)
+    p_plastic = float(raw[6] + raw[3] * 0.5 + raw[7] * 0.2)
 
-    # Real-World Recycling Item Fine-Tuning:
-    if raw[4] > 0.45:
-        p_metal += 0.6
+    # 1. PAPER ROLL / TISSUE / CUP (Matte white/cream/grey diffuse surface)
+    if low_sat_pct > 0.40 and mean_s < 65.0:
+        p_paper += 0.70
+        p_plastic *= 0.3
+        p_metal *= 0.05
 
-    # Plastic Juice Bottle (Rs 10 Sting, Frooti, Maaza) or Water Bottle:
-    if glint_ratio > 0.007 or (mean_s > 55.0 and mean_v > 95.0):
-        p_plastic += 0.40
-        p_paper *= 0.25
+    # 2. VIBRANT COLORS & METALLIC SHINE (Metal Can or Plastic Bottle)
+    elif mean_s > 75.0:
+        p_paper *= 0.1
+        if raw[4] > 0.25 or np.mean(v > 210) > 0.06:
+            p_metal += 0.60
+        else:
+            p_plastic += 0.50
 
-    # Paper Roll / Cup / Cardboard:
-    if glint_ratio < 0.002 and (mean_v > 150.0 and mean_s < 45.0):
-        p_paper += 0.85
-        p_plastic *= 0.20
+    # 3. HIGH METALLIC CONTRAST / REFLECTIVITY
+    elif raw[4] > 0.40:
+        p_metal += 0.60
+        p_paper *= 0.2
 
     total_p = p_plastic + p_paper + p_metal + 1e-6
     p_plastic /= total_p
