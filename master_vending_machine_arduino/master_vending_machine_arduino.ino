@@ -3,13 +3,12 @@
  * Department of AI & Data Science - Engineering Clinic
  * 
  * Hardware Mapping:
- * - Pin D2: IR Sensor 1 (Intake Staging Tray)
- * - Pin D3: IR Sensor 2 (Exit Chute Verification)
+ * - Pin D2: IR Sensor 1 (Intake Staging Tray) - Active LOW
+ * - Pin D3: IR Sensor 2 (Exit Chute Verification) - Active LOW
  * - Pin D4: SoftwareSerial RX (Receives AI class from ESP32-CAM TX)
  * - Pin D5: SoftwareSerial TX (Sends trigger command to ESP32-CAM RX)
- * - Pin D8: Piezo Buzzer
- * - Pin D9: Servo 1 PWM (Upper Plastic Deflector Flap)
- * - Pin D10: Servo 2 PWM (Lower Metal / Paper Selector Flap)
+ * - Pin D8: Buzzer (Active/Passive)
+ * - Pin D9: Servo PWM (Central Carousel Turntable Indexer: 0° / 90° / 180°)
  * - Pin D13: Status Indicator LED
  * - Pin A4: I2C SDA (16x2 LCD)
  * - Pin A5: I2C SCL (16x2 LCD)
@@ -26,41 +25,49 @@ const int PIN_IR_CHUTE   = 3;
 const int PIN_ESP_RX     = 4;   // Connects to ESP32-CAM U0T (TX)
 const int PIN_ESP_TX     = 5;   // Connects to ESP32-CAM U0R (RX via 1k divider)
 const int PIN_BUZZER     = 8;
-const int PIN_SERVO_1    = 9;
-const int PIN_SERVO_2    = 10;
+const int PIN_SERVO      = 9;   // Single Central Carousel Servo
 const int PIN_LED_STATUS = 13;
 
 // ================= OBJECTS =================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-Servo servo1;
-Servo servo2;
+Servo carouselServo;
 SoftwareSerial espSerial(PIN_ESP_RX, PIN_ESP_TX); // RX, TX
 
 // State variables
 int totalPoints = 0;
 int totalItemsSorted = 0;
+bool systemReady = false;
 
 void beepSound(int ms) {
-  tone(PIN_BUZZER, 2500, ms);
+  tone(PIN_BUZZER, 2400, ms);
   digitalWrite(PIN_BUZZER, HIGH);
   delay(ms);
   noTone(PIN_BUZZER);
   digitalWrite(PIN_BUZZER, LOW);
 }
 
+void displayReadyScreen() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("SMART RECYCLE AI");
+  lcd.setCursor(0, 1);
+  lcd.print("INSERT ITEM...");
+  digitalWrite(PIN_LED_STATUS, LOW);
+  digitalWrite(PIN_BUZZER, LOW);
+  noTone(PIN_BUZZER);
+}
+
 void setup() {
-  Serial.begin(9600);       // PC Debug Serial
-  espSerial.begin(9600);    // ESP32-CAM Communication Serial
+  Serial.begin(9600);
+  espSerial.begin(9600);
 
-  Serial.println(F("\n=================================================="));
-  Serial.println(F("  SMART RECYCLING VENDING MACHINE: MASTER SYSTEM  "));
-  Serial.println(F("=================================================="));
-
-  pinMode(PIN_IR_INTAKE, INPUT);
-  pinMode(PIN_IR_CHUTE, INPUT);
+  pinMode(PIN_IR_INTAKE, INPUT_PULLUP);
+  pinMode(PIN_IR_CHUTE, INPUT_PULLUP);
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_LED_STATUS, OUTPUT);
 
+  // Ensure buzzer & LED are strictly OFF on boot
+  noTone(PIN_BUZZER);
   digitalWrite(PIN_BUZZER, LOW);
   digitalWrite(PIN_LED_STATUS, LOW);
 
@@ -71,37 +78,54 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("SMART RECYCLE AI");
   lcd.setCursor(0, 1);
-  lcd.print("INITIALIZING...");
+  lcd.print("STABILIZING 2S..");
 
-  // Attach and zero-calibrate Servos
-  servo1.attach(PIN_SERVO_1);
-  servo2.attach(PIN_SERVO_2);
-  servo1.write(0);
-  servo2.write(0);
-  delay(500);
+  // Attach and zero-calibrate Single Servo (0 deg = Plastic default)
+  carouselServo.attach(PIN_SERVO);
+  carouselServo.write(0);
 
-  // Ready Screen
+  // Power stabilization delay (prevents adapter surge false triggers)
+  delay(2000);
+
+  // Check if IR sensor is stuck triggered at boot
+  if (digitalRead(PIN_IR_INTAKE) == LOW) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("IR 1 BLOCKED!");
+    lcd.setCursor(0, 1);
+    lcd.print("ADJUST TRIMPOT");
+    Serial.println(F("[WARNING] IR Sensor 1 is reading LOW on startup! Adjust potentiometer."));
+    while (digitalRead(PIN_IR_INTAKE) == LOW) {
+      // Flash LED warning without sound so it doesn't irritate
+      digitalWrite(PIN_LED_STATUS, HIGH);
+      delay(200);
+      digitalWrite(PIN_LED_STATUS, LOW);
+      delay(200);
+    }
+  }
+
+  // Double beep when ready
+  beepSound(80);
+  delay(100);
+  beepSound(80);
+
   displayReadyScreen();
-  Serial.println(F("[SYSTEM READY] Waiting for waste deposit..."));
-}
-
-void displayReadyScreen() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("SMART RECYCLE AI");
-  lcd.setCursor(0, 1);
-  lcd.print("INSERT ITEM...");
-  digitalWrite(PIN_LED_STATUS, LOW);
+  systemReady = true;
+  Serial.println(F("[SYSTEM READY] Carousel initialized at 0 deg. Waiting for waste deposit..."));
 }
 
 void loop() {
-  // Check if waste item is placed in intake hopper (IR 1 triggered LOW)
+  if (!systemReady) return;
+
+  // Debounced intake trigger: must read LOW steadily for 100ms
   if (digitalRead(PIN_IR_INTAKE) == LOW) {
-    processDeposit();
+    delay(100); // Debounce noise
+    if (digitalRead(PIN_IR_INTAKE) == LOW) {
+      processDeposit();
+    }
   }
 
-  // Also accept manual keyboard override commands from PC Serial Monitor:
-  // Type 'p' for Plastic, 'm' for Metal, 'c' for Paper/Cup in Serial Monitor
+  // Serial Monitor Keyboard Overrides (p = Plastic, m = Metal, c = Paper)
   if (Serial.available()) {
     char cmd = Serial.read();
     if (cmd == 'p' || cmd == 'P') executeSort('P');
@@ -123,16 +147,14 @@ void processDeposit() {
   lcd.print("AI SCANNING...");
   beepSound(100);
 
-  // Trigger ESP32-CAM to capture image and run MobileNetV2 inference
+  // Trigger ESP32-CAM
   espSerial.println("SNAP");
   Serial.println(F("[COMMAND] Sent 'SNAP' trigger to ESP32-CAM..."));
 
-  // Wait for classification result with a 4-second timeout
   char materialClass = 0;
   unsigned long scanStart = millis();
 
-  while (millis() - scanStart < 4000) {
-    // Check if ESP32-CAM sent back classification
+  while (millis() - scanStart < 3000) {
     if (espSerial.available()) {
       char c = espSerial.read();
       if (c == 'P' || c == 'M' || c == 'C') {
@@ -140,7 +162,6 @@ void processDeposit() {
         break;
       }
     }
-    // Also allow PC Serial monitor input
     if (Serial.available()) {
       char c = Serial.read();
       if (c == 'P' || c == 'p') { materialClass = 'P'; break; }
@@ -150,79 +171,73 @@ void processDeposit() {
     delay(20);
   }
 
-  // If no response from ESP32, default demo fallback (auto-cycles or defaults to Plastic)
+  // If no response from ESP32, default demo cycle
   if (materialClass == 0) {
-    Serial.println(F("[NOTICE] ESP32 standby. Auto-classifying as Plastic for test demo."));
+    Serial.println(F("[NOTICE] ESP32 standby. Auto-classifying as Plastic for demo."));
     materialClass = 'P';
   }
 
   executeSort(materialClass);
+
+  // CRITICAL: Wait until user removes hands / item clears IR sensor
+  // Prevents infinite loop re-triggering and non-stop buzzing!
+  unsigned long clearWait = millis();
+  while (digitalRead(PIN_IR_INTAKE) == LOW && (millis() - clearWait < 5000)) {
+    lcd.setCursor(0, 1);
+    lcd.print("PLEASE CLEAR HAND");
+    delay(100);
+  }
+
+  delay(500);
+  displayReadyScreen();
 }
 
 void executeSort(char materialClass) {
   int rewardPoints = 0;
+  int targetAngle = 0;
 
   lcd.clear();
 
   if (materialClass == 'P') {
-    // ================= CLASS 1: PLASTIC =================
     rewardPoints = 10;
-    Serial.println(F("[AI RESULT] >>> CLASS: PLASTIC BOTTLE <<<"));
+    targetAngle = 0; // 0 deg = Plastic Compartment
+    Serial.println(F("[AI RESULT] >>> CLASS: PLASTIC BOTTLE (Angle 0 deg) <<<"));
     lcd.setCursor(0, 0);
     lcd.print("CLASS: PLASTIC");
     lcd.setCursor(0, 1);
-    lcd.print("ROUTE: BIN 1");
-
-    // Servo 1 tilts 45 deg to divert plastic directly into Bin 1
-    servo1.write(45);
-    servo2.write(0);
-
+    lcd.print("ROTATE: 0 DEG");
   } else if (materialClass == 'M') {
-    // ================= CLASS 2: METAL =================
     rewardPoints = 15;
-    Serial.println(F("[AI RESULT] >>> CLASS: METAL CAN <<<"));
+    targetAngle = 90; // 90 deg = Metal Compartment
+    Serial.println(F("[AI RESULT] >>> CLASS: METAL CAN (Angle 90 deg) <<<"));
     lcd.setCursor(0, 0);
     lcd.print("CLASS: METAL CAN");
     lcd.setCursor(0, 1);
-    lcd.print("ROUTE: BIN 2");
-
-    // Servo 1 drops down (90 deg), Servo 2 diverts 45 deg into Bin 2
-    servo1.write(90);
-    delay(250);
-    servo2.write(45);
-
+    lcd.print("ROTATE: 90 DEG");
   } else if (materialClass == 'C') {
-    // ================= CLASS 3: PAPER =================
     rewardPoints = 5;
-    Serial.println(F("[AI RESULT] >>> CLASS: PAPER CUP <<<"));
+    targetAngle = 180; // 180 deg = Paper Compartment
+    Serial.println(F("[AI RESULT] >>> CLASS: PAPER (Angle 180 deg) <<<"));
     lcd.setCursor(0, 0);
     lcd.print("CLASS: PAPER CUP");
     lcd.setCursor(0, 1);
-    lcd.print("ROUTE: BIN 3");
-
-    // Servo 1 drops down (90 deg), Servo 2 diverts 135 deg into Bin 3
-    servo1.write(90);
-    delay(250);
-    servo2.write(135);
+    lcd.print("ROTATE: 180 DEG");
   }
 
-  // Monitor IR Sensor 2 at chute exit to confirm physical bin entry
-  Serial.println(F("[CHUTE] Waiting for item to pass IR Sensor 2 into bin..."));
-  unsigned long chuteStart = millis();
-  bool passed = false;
+  // Move single servo to index carousel
+  carouselServo.write(targetAngle);
+  delay(600); // Allow servo time to rotate
 
-  while (millis() - chuteStart < 3500) {
+  // Verify item passage through chute exit IR sensor
+  Serial.println(F("[CHUTE] Waiting for item to drop into compartment..."));
+  unsigned long chuteStart = millis();
+  while (millis() - chuteStart < 2500) {
     if (digitalRead(PIN_IR_CHUTE) == LOW) {
-      passed = true;
       Serial.println(F("[CHUTE CONFIRMED] Item verified in collection bin!"));
       break;
     }
     delay(50);
   }
-
-  // Reset Servos to 0 deg neutral position
-  servo1.write(0);
-  servo2.write(0);
 
   // Update Score and Show Confirmation
   totalPoints += rewardPoints;
@@ -237,10 +252,10 @@ void executeSort(char materialClass) {
   lcd.print(" TOT:");
   lcd.print(totalPoints);
 
-  beepSound(200);
+  beepSound(150);
   digitalWrite(PIN_LED_STATUS, LOW);
-  delay(2500);
+  delay(1500);
 
-  // Return to ready
-  displayReadyScreen();
+  // Return carousel to 0 deg home
+  carouselServo.write(0);
 }
