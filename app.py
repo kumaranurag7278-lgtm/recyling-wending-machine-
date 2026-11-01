@@ -335,8 +335,19 @@ def set_camera_url():
     data = request.json or {}
     url = data.get('url', '').strip()
     if url:
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "http://" + url
+        parts = url.split("://", 1)[1]
+        host_port = parts.split("/")[0]
+        if ":" not in host_port:
+            rest = "/".join(parts.split("/")[1:])
+            parts = f"{host_port}:8080" + (f"/{rest}" if rest else "")
+            url = "http://" + parts
+        if not url.endswith("/video") and not url.endswith("/shot.jpg"):
+            url = url.rstrip("/") + "/video"
         system_state["phone_camera_url"] = url
         system_state["camera_source"] = "PHONE"
+        print(f"[API] Set phone camera URL to: {url}")
         return jsonify({"status": "updated", "url": url})
     return jsonify({"error": "Invalid URL"}), 400
 
@@ -382,21 +393,38 @@ HTML_DASHBOARD = """
       </div>
     </div>
 
-    <!-- Live Status Indicators -->
+    <!-- Live Status & Phone IP Cam Connector (Top Right Corner) -->
     <div class="flex items-center gap-2 text-xs flex-wrap">
+      <!-- Arduino Connection Status -->
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
         <span id="badge-conn" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
         <span id="label-conn" class="text-slate-300 font-medium">Arduino: COM11 (9600)</span>
       </div>
       
-      <!-- Camera Source Toggle Buttons -->
-      <div class="flex items-center p-0.5 rounded-lg bg-slate-900 border border-slate-800">
-        <button id="btn-cam-laptop" onclick="switchCamera('WEBCAM')" class="px-3 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white shadow transition">
-          <i class="fa-solid fa-laptop mr-1"></i> Laptop Camera
+      <!-- Phone IP Cam Corner Widget -->
+      <div class="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-cyan-500/40 shadow-lg shadow-cyan-950/20">
+        <!-- Switch to Laptop Camera -->
+        <button id="btn-cam-laptop" onclick="switchCamera('WEBCAM')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow transition hover:opacity-95" title="Switch to Laptop Webcam">
+          <i class="fa-solid fa-laptop mr-1"></i> Laptop Cam
         </button>
-        <button id="btn-cam-phone" onclick="switchCamera('PHONE')" class="px-3 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition">
-          <i class="fa-solid fa-mobile-screen mr-1"></i> Phone IP Cam
-        </button>
+
+        <div class="h-5 w-px bg-slate-800 mx-0.5"></div>
+
+        <!-- Phone IP Input Box & Auto-Connect Button -->
+        <div class="flex items-center gap-1">
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-cyan-400 text-xs">
+              <i class="fa-solid fa-mobile-screen"></i>
+            </span>
+            <input type="text" id="corner-phone-ip"
+                   placeholder="Phone IP (e.g. 192.168.1.5:8080)"
+                   onkeydown="if(event.key==='Enter') connectCornerPhoneCam()"
+                   class="bg-slate-950 text-white text-xs pl-7 pr-2 py-1.5 rounded-lg border border-slate-700 focus:outline-none focus:border-cyan-400 w-44 sm:w-56 font-mono placeholder:text-slate-600 shadow-inner" />
+          </div>
+          <button id="btn-connect-phone" onclick="connectCornerPhoneCam()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white shadow transition flex items-center gap-1 active:scale-95" title="Connect Phone IP Cam Stream">
+            <i class="fa-solid fa-plug"></i> Connect
+          </button>
+        </div>
       </div>
     </div>
   </header>
@@ -654,16 +682,70 @@ HTML_DASHBOARD = """
           body: JSON.stringify({ source: source })
         });
         const btnLaptop = document.getElementById('btn-cam-laptop');
-        const btnPhone = document.getElementById('btn-cam-phone');
+        const btnPhone = document.getElementById('btn-connect-phone');
         if (source === 'WEBCAM') {
-          btnLaptop.className = "px-3 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white shadow transition";
-          btnPhone.className = "px-3 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition";
+          btnLaptop.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white shadow transition hover:opacity-95";
+          btnPhone.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white shadow transition flex items-center gap-1 active:scale-95";
+          btnPhone.innerHTML = '<i class="fa-solid fa-plug"></i> Connect';
         } else {
-          btnPhone.className = "px-3 py-1 rounded-md text-xs font-semibold bg-cyan-600 text-white shadow transition";
-          btnLaptop.className = "px-3 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition";
+          btnPhone.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow transition flex items-center gap-1";
+          btnPhone.innerHTML = '<i class="fa-solid fa-check text-emerald-300"></i> Connected';
+          btnLaptop.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition";
         }
+        const videoEl = document.getElementById('video-feed');
+        videoEl.src = '/video_feed?t=' + new Date().getTime();
       } catch (err) { console.error(err); }
     }
+
+    async function connectCornerPhoneCam() {
+      const ipInput = document.getElementById('corner-phone-ip');
+      let val = (ipInput.value || '').trim();
+      if (!val) {
+        alert("Please enter your Phone's IP address (e.g. 192.168.1.5:8080) from the IP Webcam app!");
+        ipInput.focus();
+        return;
+      }
+
+      localStorage.setItem('saved_phone_ip', val);
+
+      const btn = document.getElementById('btn-connect-phone');
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting...';
+      btn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 text-white shadow transition flex items-center gap-1";
+
+      try {
+        const res = await fetch('/api/camera_config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: val })
+        });
+        const data = await res.json();
+        if (data.status === 'updated') {
+          const btnLaptop = document.getElementById('btn-cam-laptop');
+          btnLaptop.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition";
+          btn.innerHTML = '<i class="fa-solid fa-check text-emerald-300"></i> Streaming';
+          btn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow transition flex items-center gap-1";
+          
+          // Refresh feed connection
+          const videoEl = document.getElementById('video-feed');
+          videoEl.src = '/video_feed?t=' + new Date().getTime();
+        } else {
+          btn.innerHTML = '<i class="fa-solid fa-plug"></i> Connect';
+          btn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white shadow transition flex items-center gap-1 active:scale-95";
+        }
+      } catch (err) {
+        console.error(err);
+        btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Retry';
+        btn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 text-white shadow transition flex items-center gap-1";
+      }
+    }
+
+    // Auto-load saved Phone IP from browser memory
+    window.addEventListener('DOMContentLoaded', () => {
+      const savedIp = localStorage.getItem('saved_phone_ip');
+      if (savedIp) {
+        document.getElementById('corner-phone-ip').value = savedIp;
+      }
+    });
 
     async function fetchTelemetry() {
       try {
