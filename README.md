@@ -11,9 +11,9 @@ An automated, eco-incentivized smart recycling vending machine engineered for ra
 
 ## 📸 Prototype Overview
 
-| Turntable Mechanism (Jam-Free) | Full Prototype Overview |
-|:---:|:---:|
-| ![Carousel Turntable](docs/images/carousel_turntable_architecture.jpg) | ![Cardboard Prototype](docs/images/cardboard_vending_machine_overview.jpg) |
+<p align="center">
+  <img src="docs/images/cardboard_vending_machine_overview.jpg" alt="Cardboard Vending Machine Prototype" width="750"/>
+</p>
 
 ---
 
