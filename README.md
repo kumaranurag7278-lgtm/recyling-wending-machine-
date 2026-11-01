@@ -102,24 +102,12 @@ recyling-wending-machine-/
 ├── start_dashboard.bat                      # 1-Click Windows Launcher for Web App
 ├── requirements.txt                         # Python dependencies
 ├── master_vending_machine_arduino/
-│   └── master_vending_machine_arduino.ino   # Core Arduino controller firmware
-├── master_vending_machine_dashboard_firmware/
-│   └── master_vending_machine_dashboard_firmware.ino # Firmware with bi-directional JSON/Serial bridge
+│   └── master_vending_machine_arduino.ino   # Core Arduino Uno controller firmware
 ├── esp32_cam_ai_classifier/
-│   └── esp32_cam_ai_classifier.ino          # ESP32-CAM AI capture & classification sketch
-├── esp32_cam_ap_streamer/
-│   └── esp32_cam_ap_streamer.ino            # Wi-Fi AP video streaming sketch
-├── diagnostic_test/
-│   └── diagnostic_test.ino                  # Complete hardware test & pin check
-├── dual_ir_test_sketch/
-│   └── dual_ir_test_sketch.ino              # IR sensor calibration sketch
-├── hardware_test_sketch/
-│   └── hardware_test_sketch.ino             # Subsystem diagnostics
-├── servo_test_sketch/
-│   └── servo_test_sketch.ino                # SG90 angle calibration (0°, 90°, 180°)
+│   └── esp32_cam_ai_classifier.ino          # ESP32-CAM AI vision classification sketch
 ├── docs/
-│   ├── images/                              # High-resolution prototype diagrams & renders
-│   └── schematics/                          # Interactive HTML blueprints & wiring guides
+│   └── images/                              # High-resolution prototype diagrams & renders
+├── LICENSE                                  # MIT Open Source License
 └── README.md                                # Comprehensive documentation
 ```
 
