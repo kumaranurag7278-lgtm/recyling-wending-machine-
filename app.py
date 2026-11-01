@@ -143,47 +143,63 @@ def serial_worker():
 t = threading.Thread(target=serial_worker, daemon=True)
 t.start()
 
+# Dynamic Object Detector: Finds actual physical item anywhere on slider/table
+def detect_dynamic_object(frame):
+    if frame is None or frame.size == 0:
+        return None
+    fh, fw, _ = frame.shape
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(blurred, 30, 90)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 13))
+    dilated = cv2.dilate(edges, kernel, iterations=2)
+    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best_box = None
+    max_area = 0
+    min_area = fw * fh * 0.035 # Minimum 3.5% of frame area for bottle, can, or roll
+
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area > min_area:
+            bx, by, bw, bh = cv2.boundingRect(c)
+            # Avoid full screen boundary
+            if not (bw > fw * 0.97 and bh > fh * 0.97):
+                if area > max_area:
+                    max_area = area
+                    pad = 12
+                    px1 = max(0, bx - pad)
+                    py1 = max(0, by - pad)
+                    px2 = min(fw, bx + bw + pad)
+                    py2 = min(fh, by + bh + pad)
+                    best_box = (px1, py1, px2 - px1, py2 - py1)
+    return best_box
+
 # Deep Learning & Multi-Modal Material Classifier
-# Specializing in:
-# 1. Plastic Bottles / Rs 10 Juice Bottles (Frooti, Sting, Maaza, PET Water Bottles) -> Flap 1 ('p')
-# 2. Paper Rolls / Cups / Tetra Pak -> Flap 2 ('c')
-# 3. Metal Beverage Cans / Aluminum Items (Coke, Pepsi, Red Bull, Tin) -> End Chute ('m')
-# 4. Empty Ramp / Slider Detection -> Waiting State (No servo movement)
 def run_waste_model(roi):
     if waste_net is None or roi is None or roi.size == 0:
-        return "WAITING FOR ITEM (EMPTY)", 0.0, None, (148, 163, 184), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}, False
+        return "SLIDER EMPTY (PLACE ITEM)", 0.0, None, (100, 116, 139), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}
 
     hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
-    # 1. OBJECT PRESENCE & EMPTY SLIDER FILTER
-    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 30, 90)
-    edge_pct = np.mean(edges > 0)
     std_s = float(np.std(s))
     std_v = float(np.std(v))
+    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 30, 90)
+    edge_pct = float(np.mean(edges > 0))
 
-    # Find prominent object contours
-    dilated = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9)), iterations=2)
-    contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    max_c_area = max([cv2.contourArea(c) for c in contours], default=0.0)
+    # Reject empty wood/cardboard background if contour was borderline
+    if std_s < 22.0 and std_v < 20.0 and edge_pct < 0.05:
+        return "SLIDER EMPTY (PLACE ITEM)", 0.0, None, (100, 116, 139), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}
 
-    # Empty slider condition:
-    # Bare wood/cardboard ramp has uniform texture, low color variance, and no significant contour
-    is_object_present = (max_c_area > 3500) or (std_s > 27.0) or (std_v > 24.0 and edge_pct > 0.07)
-
-    if not is_object_present:
-        return "SLIDER EMPTY (PLACE ITEM)", 0.0, None, (100, 116, 139), {"plastic": 0.0, "paper": 0.0, "metal": 0.0}, False
-
-    # 2. NEURAL NETWORK FORWARD PASS (With PyTorch ImageNet Normalization)
+    # NEURAL NETWORK FORWARD PASS (PyTorch ImageNet Normalized)
     img_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     img_norm = (img_rgb - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
     blob = cv2.resize(img_norm, (224, 224)).transpose(2, 0, 1)[np.newaxis, ...]
     waste_net.setInput(blob)
     raw = waste_net.forward()[0] # Shape (8,)
 
-    # 3. OPTICAL MATERIAL SIGNATURES
-    # Specular glint (intense reflection lines/highlights typical of curved plastic bottles and metallic cans)
     glint_ratio = float(np.mean((v > 220) & (s < 70)))
     mean_v = float(np.mean(v))
     mean_s = float(np.mean(s))
@@ -195,18 +211,15 @@ def run_waste_model(roi):
     p_paper = float(raw[5] + raw[2] * 0.9)
 
     # Real-World Recycling Item Fine-Tuning:
-    # Metal can or metal object:
     if raw[4] > 0.45:
         p_metal += 0.6
 
     # Plastic Juice Bottle (Rs 10 Sting, Frooti, Maaza) or Water Bottle:
-    # Characterized by specular glints, transparent highlights, or vibrant drink/cap colors
     if glint_ratio > 0.007 or (mean_s > 55.0 and mean_v > 95.0):
         p_plastic += 0.40
         p_paper *= 0.25
 
     # Paper Roll / Cup / Cardboard:
-    # Pure matte diffuse texture, no specular glints, high luminance white paper or kraft cardboard
     if glint_ratio < 0.002 and (mean_v > 150.0 and mean_s < 45.0):
         p_paper += 0.85
         p_plastic *= 0.20
@@ -222,24 +235,24 @@ def run_waste_model(roi):
         "metal":   round(p_metal * 100, 1)
     }
 
-    # Best match decision
     if p_plastic > p_paper and p_plastic > p_metal:
         conf = round(p_plastic * 100, 1)
-        return "PLASTIC / JUICE BOTTLE", conf, 'p', (16, 185, 129), prob_dict, True # Emerald
+        return "PLASTIC / JUICE BOTTLE", conf, 'p', (16, 185, 129), prob_dict
     elif p_paper > p_plastic and p_paper > p_metal:
         conf = round(p_paper * 100, 1)
-        return "PAPER ROLL / CUP", conf, 'c', (245, 158, 11), prob_dict, True # Amber
+        return "PAPER ROLL / CUP", conf, 'c', (245, 158, 11), prob_dict
     else:
         conf = round(p_metal * 100, 1)
-        return "METAL BEVERAGE CAN", conf, 'm', (59, 130, 246), prob_dict, True # Blue
+        return "METAL BEVERAGE CAN", conf, 'm', (59, 130, 246), prob_dict
 
 # Live Video Stream Generator (Neural Network Real-Time Inference)
 last_auto_sort_time = 0
 detection_counter = 0
 current_candidate_code = None
+smoothed_box = None
 
 def generate_camera_frames():
-    global system_state, last_auto_sort_time, detection_counter, current_candidate_code
+    global system_state, last_auto_sort_time, detection_counter, current_candidate_code, smoothed_box
     cap = None
     current_mode = ""
     current_url = ""
@@ -282,61 +295,70 @@ def generate_camera_frames():
 
                 h, w, _ = frame.shape
 
-                # Center Scanning Box Coordinates (Box width 280, height 320)
-                bw, bh = 280, 320
-                x1 = (w - bw) // 2
-                y1 = (h - bh) // 2
-                x2 = x1 + bw
-                y2 = y1 + bh
+                # DYNAMIC OBJECT DETECTION (No static box!)
+                detected_box = detect_dynamic_object(frame)
 
-                # Crop ROI strictly inside the box
-                roi = frame[y1:y2, x1:x2]
-
-                # Run Multi-Modal AI Classifier (with Empty Slider Detection)
-                category_name, conf, sort_code, hud_color, probs, is_object_present = run_waste_model(roi)
-
-                system_state["prob_plastic"] = probs["plastic"]
-                system_state["prob_paper"]   = probs["paper"]
-                system_state["prob_metal"]   = probs["metal"]
-                system_state["predicted_class"] = category_name
-                system_state["confidence"] = conf
-
-                # Dim outside area slightly to focus attention on scanning box
-                overlay = frame.copy()
-                cv2.rectangle(overlay, (0, 0), (w, h), (10, 15, 26), -1)
-                cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
-                frame = cv2.addWeighted(overlay, 0.40, frame, 0.60, 0)
-
-                # Draw Target Box & Corner Crosshairs
-                cv2.rectangle(frame, (x1, y1), (x2, y2), hud_color, 2)
-                L = 24
-                cv2.line(frame, (x1, y1), (x1 + L, y1), hud_color, 4)
-                cv2.line(frame, (x1, y1), (x1, y1 + L), hud_color, 4)
-                cv2.line(frame, (x2, y1), (x2 - L, y1), hud_color, 4)
-                cv2.line(frame, (x2, y1), (x2, y1 + L), hud_color, 4)
-                cv2.line(frame, (x1, y2), (x1 + L, y2), hud_color, 4)
-                cv2.line(frame, (x1, y2), (x1, y2 - L), hud_color, 4)
-                cv2.line(frame, (x2, y2), (x2 - L, y2), hud_color, 4)
-                cv2.line(frame, (x2, y2), (x2, y2 - L), hud_color, 4)
-
-                if not is_object_present:
-                    # Slider is empty: Do NOT increment counter, DO NOT actuate servos!
+                if detected_box is None:
+                    # SLIDER EMPTY: No box drawn, reset counters
+                    smoothed_box = None
                     detection_counter = 0
                     current_candidate_code = None
+                    system_state["predicted_class"] = "SLIDER EMPTY (PLACE ITEM)"
+                    system_state["confidence"] = 0.0
                     system_state["progress"] = 0
+                    system_state["prob_plastic"] = 0.0
+                    system_state["prob_paper"]   = 0.0
+                    system_state["prob_metal"]   = 0.0
 
-                    tag_text = "READY: PLACE BOTTLE / CAN ON SLIDER"
-                    cv2.rectangle(frame, (x1, y1 - 32), (x1 + bw, y1), (15, 23, 42), -1)
-                    cv2.putText(frame, tag_text, (x1 + 10, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.44, (148, 163, 184), 1)
-
-                    cv2.putText(frame, "[ WAITING FOR OBJECT... ]", (x1 + 48, y2 + 25),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 116, 139), 1)
+                    # Clean top status banner on live stream
+                    cv2.rectangle(frame, (16, 16), (w - 16, 46), (15, 23, 42), -1)
+                    cv2.putText(frame, "RECYCLING CAMERA ACTIVE  |  SLIDER READY - PLACE BOTTLE OR CAN",
+                                (26, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (148, 163, 184), 1)
                 else:
-                    # Object Present: Show target class & confidence
-                    tag_text = f"AI CLASSIFIER: {category_name} ({conf:.1f}%)"
-                    cv2.rectangle(frame, (x1, y1 - 36), (x1 + bw, y1), (15, 23, 42), -1)
-                    cv2.putText(frame, tag_text, (x1 + 6, y1 - 11),
+                    # OBJECT DETECTED: Smooth box tracking across frames
+                    if smoothed_box is None:
+                        smoothed_box = detected_box
+                    else:
+                        alpha = 0.45
+                        sx = int(alpha * detected_box[0] + (1 - alpha) * smoothed_box[0])
+                        sy = int(alpha * detected_box[1] + (1 - alpha) * smoothed_box[1])
+                        sw = int(alpha * detected_box[2] + (1 - alpha) * smoothed_box[2])
+                        sh = int(alpha * detected_box[3] + (1 - alpha) * smoothed_box[3])
+                        smoothed_box = (sx, sy, sw, sh)
+
+                    bx, by, bw, bh = smoothed_box
+                    bx = max(0, min(w - 10, bx))
+                    by = max(0, min(h - 10, by))
+                    bw = max(10, min(w - bx, bw))
+                    bh = max(10, min(h - by, bh))
+
+                    roi = frame[by:by+bh, bx:bx+bw]
+                    category_name, conf, sort_code, hud_color, probs = run_waste_model(roi)
+
+                    system_state["prob_plastic"] = probs["plastic"]
+                    system_state["prob_paper"]   = probs["paper"]
+                    system_state["prob_metal"]   = probs["metal"]
+                    system_state["predicted_class"] = category_name
+                    system_state["confidence"] = conf
+
+                    # Draw Dynamic Bounding Box around the object!
+                    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), hud_color, 2)
+                    L = min(28, bw // 4, bh // 4)
+                    if L > 4:
+                        cv2.line(frame, (bx, by), (bx + L, by), hud_color, 4)
+                        cv2.line(frame, (bx, by), (bx, by + L), hud_color, 4)
+                        cv2.line(frame, (bx + bw, by), (bx + bw - L, by), hud_color, 4)
+                        cv2.line(frame, (bx + bw, by), (bx + bw, by + L), hud_color, 4)
+                        cv2.line(frame, (bx, by + bh), (bx + L, by + bh), hud_color, 4)
+                        cv2.line(frame, (bx, by + bh), (bx, by + bh - L), hud_color, 4)
+                        cv2.line(frame, (bx + bw, by + bh), (bx + bw - L, by + bh), hud_color, 4)
+                        cv2.line(frame, (bx + bw, by + bh), (bx + bw, by + bh - L), hud_color, 4)
+
+                    # Floating Tag above detected object
+                    tag_text = f"{category_name} ({conf:.1f}%)"
+                    tag_y = max(30, by - 10)
+                    cv2.rectangle(frame, (bx, tag_y - 24), (bx + min(bw, 340), tag_y), (15, 23, 42), -1)
+                    cv2.putText(frame, tag_text, (bx + 6, tag_y - 7),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.48, hud_color, 2)
 
                     # Streak logic for automatic triggering
@@ -349,18 +371,17 @@ def generate_camera_frames():
                     progress_pct = min(100, int((detection_counter / 10) * 100))
                     system_state["progress"] = progress_pct
 
-                    # Bottom Progress Bar
+                    # Progress Bar directly under the detected object
+                    bar_y = min(h - 18, by + bh + 8)
                     bar_w = int((bw - 4) * (progress_pct / 100))
-                    cv2.rectangle(frame, (x1 + 2, y2 + 10), (x1 + bw - 2, y2 + 24), (30, 41, 59), -1)
-                    cv2.rectangle(frame, (x1 + 2, y2 + 10), (x1 + 2 + bar_w, y2 + 24), hud_color, -1)
-                    cv2.putText(frame, f"LOCKING IN... {progress_pct}%", (x1 + 52, y2 + 40),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                    cv2.rectangle(frame, (bx + 2, bar_y), (bx + bw - 2, bar_y + 12), (30, 41, 59), -1)
+                    cv2.rectangle(frame, (bx + 2, bar_y), (bx + 2 + bar_w, bar_y + 12), hud_color, -1)
 
                     # Trigger Sort after ~1 second steady hold
                     if detection_counter >= 10 and (time.time() - last_auto_sort_time > 4.5):
                         last_auto_sort_time = time.time()
                         detection_counter = 0
-                        print(f"\n[NEURAL NET TRIGGER] '{category_name}' confirmed! Actuating Arduino '{sort_code}'...")
+                        print(f"\n[AI AUTO-SORT] Dynamic object '{category_name}' confirmed! Actuating Arduino '{sort_code}'...")
                         if ser and ser.is_open:
                             with ser_lock:
                                 ser.write(sort_code.encode('utf-8'))
@@ -551,7 +572,7 @@ HTML_DASHBOARD = """
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
             <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-            <h2 class="text-sm font-semibold text-white">Live AI Video Stream (Scanning Box Active)</h2>
+            <h2 class="text-sm font-semibold text-white">Live AI Video Stream (Dynamic Object Detection Active)</h2>
           </div>
           <div class="flex items-center gap-2">
             <span id="ai-detected-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 font-bold">
