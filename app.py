@@ -29,9 +29,12 @@ system_state = {
     "status": "INITIALIZING...",
     "last_updated": time.time(),
     "history": [],
-    "camera_mode": "SCANNER STANDBY (Awaiting Phone IP Webcam)",
+    "camera_source": "WEBCAM", # "WEBCAM" or "PHONE"
+    "camera_mode": "LAPTOP WEBCAM (Camera 0) - ACTIVE",
     "phone_camera_url": "http://192.168.1.100:8080/video",
-    "camera_connected": False
+    "detected_class": "SEARCHING...",
+    "confidence": 0,
+    "auto_sort_enabled": True
 }
 
 ser = None
@@ -46,7 +49,7 @@ def serial_worker():
                 try:
                     ser = serial.Serial(system_state["port"], system_state["baud"], timeout=1)
                     system_state["connected"] = True
-                    system_state["status"] = "CONNECTED TO HARDWARE (COM11)"
+                    system_state["status"] = "CONNECTED TO ARDUINO (COM11)"
                     print("[SERIAL] Connected to COM11 @ 9600 baud successfully.")
                 except Exception as e:
                     system_state["connected"] = False
@@ -134,29 +137,76 @@ def serial_worker():
 t = threading.Thread(target=serial_worker, daemon=True)
 t.start()
 
-# Live Video Stream Generator (Phone IP Webcam + AI HUD Simulation)
+# AI Material Classifier Function (Analyzes Central Region of Interest)
+def classify_material_roi(roi):
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # 1. Specular Highlights & Transparency (Plastic Bottle)
+    _, bright_thresh = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY)
+    specular_ratio = np.sum(bright_thresh > 0) / (roi.shape[0] * roi.shape[1])
+    std_dev = np.std(gray)
+
+    # 2. Color Saturation & Warmth (Paper / Cardboard)
+    mean_sat = np.mean(hsv[:, :, 1])
+    mean_val = np.mean(hsv[:, :, 2])
+    # Brown/Cardboard/Paper hue range
+    lower_warm = np.array([10, 40, 50])
+    upper_warm = np.array([30, 255, 220])
+    warm_mask = cv2.inRange(hsv, lower_warm, upper_warm)
+    warm_ratio = np.sum(warm_mask > 0) / (roi.shape[0] * roi.shape[1])
+
+    # 3. Metallic/Reflective Texture (Metal Can)
+    # High edge density, medium saturation, reflective gradients
+    edges = cv2.Canny(gray, 50, 150)
+    edge_density = np.sum(edges > 0) / (roi.shape[0] * roi.shape[1])
+
+    # Classification Heuristics
+    if warm_ratio > 0.18 or (mean_sat > 60 and mean_val < 180 and std_dev < 45):
+        confidence = min(96.0, 75.0 + (warm_ratio * 100))
+        return "PAPER / CUP", confidence, (245, 158, 11), 'c' # Amber
+    elif specular_ratio > 0.05 or (std_dev > 50 and mean_sat < 70):
+        confidence = min(98.5, 78.0 + (specular_ratio * 120))
+        return "PLASTIC BOTTLE", confidence, (16, 185, 129), 'p' # Emerald
+    else:
+        confidence = min(94.0, 72.0 + (edge_density * 150))
+        return "METAL CAN", confidence, (59, 130, 246), 'm' # Blue
+
+# Live Video Stream Generator (Supports Laptop Webcam 0 & Phone IP Webcam)
+last_auto_sort_time = 0
+last_detected_code = None
+detected_streak = 0
+
 def generate_camera_frames():
-    global system_state
+    global system_state, last_auto_sort_time, last_detected_code, detected_streak
     cap = None
+    current_mode = ""
     current_url = ""
 
     while True:
+        mode = system_state["camera_source"]
         target_url = system_state["phone_camera_url"].strip()
-        
-        # Normalize IP Webcam URLs (e.g. "192.168.1.5:8080" -> "http://192.168.1.5:8080/video")
-        if not target_url.startswith("http://") and not target_url.startswith("https://"):
-            target_url = "http://" + target_url
-        if not target_url.endswith("/video") and not target_url.endswith("/shot.jpg") and not target_url.endswith(":8080/video"):
-            if target_url.endswith(":8080"):
-                target_url += "/video"
 
-        # Reopen capture if URL changed
-        if current_url != target_url:
+        # Re-initialize capture if source switched
+        if mode != current_mode or (mode == "PHONE" and target_url != current_url):
             if cap: cap.release()
             try:
-                cap = cv2.VideoCapture(target_url)
+                if mode == "WEBCAM":
+                    cap = cv2.VideoCapture(0)
+                    system_state["camera_mode"] = "LAPTOP WEBCAM (Camera 0) - LIVE"
+                    print("[CAMERA] Opened Laptop Webcam (0)")
+                else:
+                    if not target_url.startswith("http://") and not target_url.startswith("https://"):
+                        target_url = "http://" + target_url
+                    if not target_url.endswith("/video") and not target_url.endswith("/shot.jpg"):
+                        target_url += "/video"
+                    cap = cv2.VideoCapture(target_url)
+                    system_state["camera_mode"] = f"PHONE IP WEBCAM ({target_url})"
+                    print(f"[CAMERA] Connecting to Phone IP Webcam: {target_url}")
+                current_mode = mode
                 current_url = target_url
-            except:
+            except Exception as e:
+                print("[CAMERA ERROR]:", e)
                 cap = None
 
         frame = None
@@ -165,53 +215,74 @@ def generate_camera_frames():
             if not ret:
                 cap.release()
                 cap = None
-                system_state["camera_connected"] = False
+                time.sleep(1)
             else:
-                system_state["camera_connected"] = True
-                system_state["camera_mode"] = f"PHONE IP WEBCAM LIVE ({current_url})"
-                
-                # Overlay AI Computer Vision Bounding Box & HUD
-                h, w, _ = frame.shape
-                cx, cy = w // 2, h // 2
-                bw, bh = int(w * 0.45), int(h * 0.55)
-                x1, y1 = cx - bw // 2, cy - bh // 2
-                x2, y2 = cx + bw // 2, cy + bh // 2
+                # Mirror laptop webcam for natural view
+                if mode == "WEBCAM":
+                    frame = cv2.flip(frame, 1)
 
-                # Corner Reticles
-                color = (34, 197, 94) # Green
+                h, w, _ = frame.shape
+                # Define Central AI Detection Region of Interest (ROI)
+                bw, bh = int(w * 0.42), int(h * 0.55)
+                x1, y1 = (w - bw) // 2, (h - bh) // 2
+                x2, y2 = x1 + bw, y1 + bh
+
+                roi = frame[y1:y2, x1:x2]
+
+                # Run AI Classification
+                cls_name, conf, color, sort_code = classify_material_roi(roi)
+                system_state["detected_class"] = cls_name
+                system_state["confidence"] = round(conf, 1)
+
+                # Draw Target Reticle & Bounding Box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                # Corner accents
+                length = 20
+                cv2.line(frame, (x1, y1), (x1 + length, y1), color, 4)
+                cv2.line(frame, (x1, y1), (x1, y1 + length), color, 4)
+                cv2.line(frame, (x2, y1), (x2 - length, y1), color, 4)
+                cv2.line(frame, (x2, y1), (x2, y1 + length), color, 4)
+                cv2.line(frame, (x1, y2), (x1 + length, y2), color, 4)
+                cv2.line(frame, (x1, y2), (x1, y2 - length), color, 4)
+                cv2.line(frame, (x2, y2), (x2 - length, y2), color, 4)
+                cv2.line(frame, (x2, y2), (x2, y2 - length), color, 4)
+
+                # Center crosshair
+                cx, cy = w // 2, h // 2
                 cv2.circle(frame, (cx, cy), 6, color, -1)
 
-                # AI Overlay Label
-                label = f"AI DETECTION: ACTIVE | CLASS: {system_state['status'][:18]}"
-                cv2.rectangle(frame, (x1, y1 - 30), (x1 + 380, y1), (15, 23, 42), -1)
-                cv2.putText(frame, label, (x1 + 8, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (56, 189, 248), 2)
+                # Top Classification Label Banner
+                cv2.rectangle(frame, (x1, y1 - 32), (x1 + 320, y1), (15, 23, 42), -1)
+                hud_text = f"{cls_name} ({conf:.1f}%)"
+                cv2.putText(frame, hud_text, (x1 + 8, y1 - 9),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+
+                # Bottom Prompt
+                cv2.putText(frame, "HOLD OBJECT IN BOX TO SORT", (x1 + 10, y2 + 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (148, 163, 184), 1)
+
+                # Auto-Trigger Arduino Sorting if object held steadily for 1.8 seconds
+                if system_state["auto_sort_enabled"]:
+                    if sort_code == last_detected_code:
+                        detected_streak += 1
+                    else:
+                        last_detected_code = sort_code
+                        detected_streak = 0
+
+                    if detected_streak >= 15 and (time.time() - last_auto_sort_time > 5.0):
+                        last_auto_sort_time = time.time()
+                        detected_streak = 0
+                        print(f"\n[AI AUTO-TRIGGER] Class '{cls_name}' confirmed! Sending '{sort_code}' to Arduino...")
+                        if ser and ser.is_open:
+                            with ser_lock:
+                                ser.write(sort_code.encode('utf-8'))
 
         if frame is None:
-            # Fallback high-tech standby scanner screen
-            system_state["camera_connected"] = False
-            system_state["camera_mode"] = "STANDBY: Enter Phone IP Webcam URL"
+            # Standby screen if camera disconnected
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
             frame[:] = (15, 23, 42)
-
-            # Scanner Grid & Reticle
-            cv2.rectangle(frame, (80, 60), (560, 420), (56, 189, 248), 2)
-            cv2.circle(frame, (320, 240), 90, (59, 130, 246), 1)
-            cv2.circle(frame, (320, 240), 8, (34, 197, 94), -1)
-
-            cv2.putText(frame, "PHONE IP WEBCAM AI SCANNER", (30, 35),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (56, 189, 248), 2)
-            cv2.putText(frame, f"URL: {system_state['phone_camera_url']}", (90, 100),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (148, 163, 184), 1)
-            cv2.putText(frame, "STATUS: Waiting for phone stream on port 8080...", (90, 125),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (250, 204, 21), 1)
-            
-            status_txt = system_state["status"]
-            cv2.putText(frame, f"SYSTEM: {status_txt}", (30, 455),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
-
-            scan_y = int(60 + (time.time() * 140) % 360)
-            cv2.line(frame, (80, scan_y), (560, scan_y), (0, 255, 255), 2)
+            cv2.putText(frame, "INITIALIZING CAMERA...", (180, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (56, 189, 248), 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
         frame_bytes = buffer.tobytes()
@@ -227,6 +298,16 @@ def video_feed():
 def get_telemetry():
     return jsonify(system_state)
 
+@app.route('/api/switch_camera', methods=['POST'])
+def switch_camera():
+    global system_state
+    data = request.json or {}
+    src = data.get('source', 'WEBCAM')
+    if src in ['WEBCAM', 'PHONE']:
+        system_state["camera_source"] = src
+        return jsonify({"status": "switched", "source": src})
+    return jsonify({"error": "Invalid source"}), 400
+
 @app.route('/api/camera_config', methods=['POST'])
 def set_camera_url():
     global system_state
@@ -234,6 +315,7 @@ def set_camera_url():
     url = data.get('url', '').strip()
     if url:
         system_state["phone_camera_url"] = url
+        system_state["camera_source"] = "PHONE"
         return jsonify({"status": "updated", "url": url})
     return jsonify({"error": "Invalid URL"}), 400
 
@@ -276,9 +358,9 @@ HTML_DASHBOARD = """
       <div>
         <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
           Smart Recycling Vending Machine
-          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium">IoT & AI Connected</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">Laptop Webcam Active</span>
         </h1>
-        <p class="text-xs text-slate-400">Sequential Gravity Sorter (Plastic • Paper • Metal) — Live Telemetry & Control Center</p>
+        <p class="text-xs text-slate-400">Sequential Gravity Sorter (Plastic • Paper • Metal) — Live Telemetry & AI Recognition</p>
       </div>
     </div>
 
@@ -286,35 +368,20 @@ HTML_DASHBOARD = """
     <div class="flex items-center gap-2 text-xs flex-wrap">
       <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
         <span id="badge-conn" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span id="label-conn" class="text-slate-300 font-medium">Arduino Uno: COM11 (9600)</span>
+        <span id="label-conn" class="text-slate-300 font-medium">Arduino: COM11 (9600)</span>
       </div>
-      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
-        <i class="fa-solid fa-mobile-screen text-cyan-400"></i>
-        <span id="label-cam" class="text-slate-300">Phone IP Webcam</span>
+      
+      <!-- Camera Source Toggle Buttons -->
+      <div class="flex items-center p-0.5 rounded-lg bg-slate-900 border border-slate-800">
+        <button id="btn-cam-laptop" onclick="switchCamera('WEBCAM')" class="px-3 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white shadow transition">
+          <i class="fa-solid fa-laptop mr-1"></i> Laptop Camera
+        </button>
+        <button id="btn-cam-phone" onclick="switchCamera('PHONE')" class="px-3 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition">
+          <i class="fa-solid fa-mobile-screen mr-1"></i> Phone IP Cam
+        </button>
       </div>
     </div>
   </header>
-
-  <!-- Phone Camera URL Config Banner -->
-  <div class="mb-5 p-3 rounded-xl bg-slate-900/90 border border-cyan-500/30 flex flex-wrap items-center justify-between gap-3 shadow-lg">
-    <div class="flex items-center gap-2.5">
-      <div class="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm">
-        <i class="fa-solid fa-video"></i>
-      </div>
-      <div>
-        <h4 class="text-xs font-bold text-white uppercase tracking-wider">Phone IP Webcam Stream</h4>
-        <p class="text-xs text-slate-400">Phone me "IP Webcam" app on karein aur neeche dikhne wala URL enter karein</p>
-      </div>
-    </div>
-    <div class="flex items-center gap-2 flex-grow max-w-lg">
-      <input type="text" id="phone-cam-input" value="http://192.168.1.100:8080/video" 
-             placeholder="e.g. http://192.168.1.5:8080/video" 
-             class="bg-slate-950 border border-slate-700 text-xs text-white rounded-lg px-3 py-2 flex-grow focus:outline-none focus:border-cyan-500">
-      <button onclick="updateCameraUrl()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg shadow-sm transition">
-        Connect Stream
-      </button>
-    </div>
-  </div>
 
   <!-- Key Metrics 4-Cards Grid -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
@@ -363,20 +430,22 @@ HTML_DASHBOARD = """
     </div>
   </div>
 
-  <!-- Main Grid: Camera Video Feed & Hardware Telemetry -->
+  <!-- Main Grid: Live Webcam Feed & Telemetry -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
     
-    <!-- Left 2 Cols: Live Video Feed & System Status -->
+    <!-- Left 2 Cols: Live Video Feed & AI Scanner -->
     <div class="lg:col-span-2 space-y-4">
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between mb-3">
           <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
-            <h2 class="text-sm font-semibold text-white">Live AI Vision Stream</h2>
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+            <h2 class="text-sm font-semibold text-white">Live AI Vision Recognition (Real-Time)</h2>
           </div>
-          <span id="camera-mode-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-            Connecting...
-          </span>
+          <div class="flex items-center gap-2">
+            <span id="ai-detected-badge" class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
+              TARGET: SCANNING...
+            </span>
+          </div>
         </div>
 
         <!-- Video Frame -->
@@ -386,25 +455,28 @@ HTML_DASHBOARD = """
 
         <div class="mt-3 flex items-center justify-between text-xs text-slate-400">
           <div class="flex items-center gap-2">
-            <span class="text-slate-500">Status:</span>
+            <span class="text-slate-500">Live AI Output:</span>
             <span id="status-text" class="text-emerald-400 font-semibold tracking-wide">READY FOR ITEM</span>
           </div>
-          <span class="text-slate-500">Latency: ~40ms</span>
+          <span class="text-emerald-400 font-medium"><i class="fa-solid fa-bolt mr-1"></i> Auto-Sort Trigger: ACTIVE</span>
         </div>
       </div>
 
       <!-- Manual Test Buttons -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Manual Hardware Override & Test Triggers</h3>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Manual One-Click Sort Triggers</h3>
+          <span class="text-[10px] text-slate-500">Clicking any button activates the physical servos immediately</span>
+        </div>
         <div class="grid grid-cols-3 gap-3">
           <button onclick="sendCommand('p')" class="py-2.5 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95">
-            <i class="fa-solid fa-bottle-water"></i> Test Plastic (Flap 1)
+            <i class="fa-solid fa-bottle-water"></i> Trigger Plastic (Flap 1)
           </button>
           <button onclick="sendCommand('c')" class="py-2.5 px-3 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95">
-            <i class="fa-solid fa-box"></i> Test Paper (Flap 2)
+            <i class="fa-solid fa-box"></i> Trigger Paper (Flap 2)
           </button>
           <button onclick="sendCommand('m')" class="py-2.5 px-3 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95">
-            <i class="fa-solid fa-can-food"></i> Test Metal (End Chute)
+            <i class="fa-solid fa-can-food"></i> Trigger Metal (End Chute)
           </button>
         </div>
       </div>
@@ -423,19 +495,19 @@ HTML_DASHBOARD = """
           <!-- Servo 1 Gauge -->
           <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
             <div>
-              <span class="text-xs text-slate-400">Servo 1 (D9 - Plastic Flap)</span>
+              <span class="text-xs text-slate-400">Servo 1 (Pin D9 - Plastic Flap)</span>
               <p id="val-servo1" class="text-lg font-bold text-white mt-0.5">0°</p>
             </div>
-            <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Bin 1 Diverter</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Flap 1 (Plastic)</span>
           </div>
 
           <!-- Servo 2 Gauge -->
           <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
             <div>
-              <span class="text-xs text-slate-400">Servo 2 (D10 - Paper Flap)</span>
+              <span class="text-xs text-slate-400">Servo 2 (Pin D10 - Paper Flap)</span>
               <p id="val-servo2" class="text-lg font-bold text-white mt-0.5">0°</p>
             </div>
-            <span class="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Bin 2 Diverter</span>
+            <span class="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Flap 2 (Paper)</span>
           </div>
 
           <!-- IR Sensor 1 -->
@@ -470,7 +542,6 @@ HTML_DASHBOARD = """
   </div>
 
   <script>
-    // Initialize Chart.js Doughnut
     const ctx = document.getElementById('ratioChart').getContext('2d');
     const ratioChart = new Chart(ctx, {
       type: 'doughnut',
@@ -502,16 +573,22 @@ HTML_DASHBOARD = """
       } catch (err) { console.error(err); }
     }
 
-    async function updateCameraUrl() {
-      const url = document.getElementById('phone-cam-input').value;
-      if (!url) return;
+    async function switchCamera(source) {
       try {
-        await fetch('/api/camera_config', {
+        await fetch('/api/switch_camera', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: url })
+          body: JSON.stringify({ source: source })
         });
-        alert('Phone Camera URL updated! Stream connecting...');
+        const btnLaptop = document.getElementById('btn-cam-laptop');
+        const btnPhone = document.getElementById('btn-cam-phone');
+        if (source === 'WEBCAM') {
+          btnLaptop.className = "px-3 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white shadow transition";
+          btnPhone.className = "px-3 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition";
+        } else {
+          btnPhone.className = "px-3 py-1 rounded-md text-xs font-semibold bg-cyan-600 text-white shadow transition";
+          btnLaptop.className = "px-3 py-1 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition";
+        }
       } catch (err) { console.error(err); }
     }
 
@@ -557,11 +634,14 @@ HTML_DASHBOARD = """
           t2.className = "text-xs font-bold text-slate-400";
         }
 
-        // Status & Mode
-        document.getElementById('status-text').innerText = data.status.toUpperCase();
-        document.getElementById('camera-mode-badge').innerText = data.camera_mode;
+        // Live AI Target Badge
+        const badge = document.getElementById('ai-detected-badge');
+        badge.innerText = `TARGET: ${data.detected_class} (${data.confidence}%)`;
 
-        // Chart Update
+        // Status update
+        document.getElementById('status-text').innerText = data.status.toUpperCase();
+
+        // Update charts
         if (total > 0) {
           ratioChart.data.datasets[0].data = [data.plastic, data.paper, data.metal];
           ratioChart.update('none');
