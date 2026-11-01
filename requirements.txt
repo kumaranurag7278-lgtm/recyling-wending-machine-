@@ -1,0 +1,4 @@
+flask>=2.2.0
+flask-cors>=3.0.10
+pyserial>=3.5
+opencv-python>=4.5.0

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mechanical Feasibility Analysis - 3-Way Sorting</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 p-4 md:p-6 font-sans">
+  <div class="max-w-4xl mx-auto space-y-6">
+    
+    <!-- Header -->
+    <div class="border-b border-slate-800 pb-4">
+      <div class="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+        <span>⚠️ Mechanical Engineering Audit</span>
+      </div>
+      <h1 class="text-xl md:text-2xl font-black text-white mt-1">
+        Why 1 Tiny Servo + 3 Narrow Sliders Jams (And The Real Fix)
+      </h1>
+      <p class="text-xs text-slate-400 mt-1">
+        Analysis of standard beverage containers (500ml bottle: 21cm × 6.5cm, Coke can: 12cm × 6.6cm) vs 9g micro-servo torque.
+      </p>
+    </div>
+
+    <!-- The Problem Breakdown -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-xs space-y-2">
+        <h3 class="font-bold text-red-300 text-sm flex items-center gap-1.5">
+          <span>❌</span> Why The Generated Image Is Unfeasible
+        </h3>
+        <p class="text-slate-300">
+          <strong>1. Slider Width vs Bottle Size:</strong> A 500ml water bottle is 21 cm long. Splitting a 30 cm box into 3 side-by-side ramps gives only <strong>8-9 cm per ramp</strong>. When a bottle tilts, it immediately bridges across the walls and gets stuck horizontally.
+        </p>
+        <p class="text-slate-300">
+          <strong>2. SG90 Torque Limits:</strong> An SG90 micro-servo produces only <strong>1.6 kg·cm torque</strong> with plastic gears. If a 150g metal can or heavy bottle rests directly on a flap, the servo stalls and strips its gears.
+        </p>
+      </div>
+
+      <div class="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs space-y-2">
+        <h3 class="font-bold text-emerald-300 text-sm flex items-center gap-1.5">
+          <span>✅</span> The Only 2 Physically Feasible Solutions
+        </h3>
+        <p class="text-slate-300">
+          <strong>Option A (1 Single Servo): Rotating Chute Pipe (Turntable Funnel):</strong> Instead of tilting a heavy flap against an item, the servo rotates a wide cylindrical pipe (or funnel) from above to aim at 3 large ground buckets.
+        </p>
+        <p class="text-slate-300">
+          <strong>Option B (2 Servos - Standard Academic Way): 2-Stage Cascaded Trapdoors:</strong> 
+          Flap 1 (Servo 1) decides <em>Plastic vs Rest</em>. If not plastic, it drops to Flap 2 (Servo 2) which decides <em>Metal vs Paper</em>. Wide slides, zero jamming.
+        </p>
+      </div>
+    </div>
+
+    <!-- Interactive Diagram: Option A (1 Servo Rotating Funnel) -->
+    <div class="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider">
+          Option A: The 1-Servo Rotating Revolver Funnel (100% Jam-Proof)
+        </h2>
+        <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">Recommended for 1 Servo</span>
+      </div>
+
+      <!-- SVG Demonstration -->
+      <div class="flex justify-center bg-slate-950 p-4 rounded-xl border border-slate-800/80">
+        <svg width="600" height="340" viewBox="0 0 600 340" class="select-none">
+          <!-- Top Drop Intake -->
+          <rect x="250" y="10" width="100" height="30" rx="4" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+          <text x="300" y="30" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">📥 INTAKE DROP</text>
+
+          <!-- Single Servo on Top Axis -->
+          <rect x="275" y="55" width="50" height="24" rx="3" fill="#2563eb" stroke="#93c5fd"/>
+          <text x="300" y="71" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">SG90 SERVO</text>
+
+          <!-- Rotating Swivel Pipe / Funnel -->
+          <path id="swivel-pipe" d="M 270 90 L 330 90 L 220 180 L 180 180 Z" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="2"/>
+          <text x="250" y="145" fill="#38bdf8" font-size="10" font-weight="bold">WIDE SWIVEL CHUTE (Ø 12cm)</text>
+
+          <!-- Ground Bins (3 Large Compartments) -->
+          <!-- Bin 1: Plastic -->
+          <rect x="50" y="210" width="150" height="110" rx="6" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b" stroke-width="2"/>
+          <text x="125" y="250" fill="#f59e0b" font-size="13" font-weight="bold" text-anchor="middle">BIN 1: PLASTIC</text>
+          <text x="125" y="275" fill="#fde68a" font-size="10" text-anchor="middle">Servo Angle: 30°</text>
+
+          <!-- Bin 2: Metal -->
+          <rect x="225" y="210" width="150" height="110" rx="6" fill="rgba(6, 182, 212, 0.2)" stroke="#06b6d4" stroke-width="2"/>
+          <text x="300" y="250" fill="#06b6d4" font-size="13" font-weight="bold" text-anchor="middle">BIN 2: METAL</text>
+          <text x="300" y="275" fill="#a5f3fc" font-size="10" text-anchor="middle">Servo Angle: 90°</text>
+
+          <!-- Bin 3: Paper -->
+          <rect x="400" y="210" width="150" height="110" rx="6" fill="rgba(16, 185, 129, 0.2)" stroke="#10b981" stroke-width="2"/>
+          <text x="475" y="250" fill="#10b981" font-size="13" font-weight="bold" text-anchor="middle">BIN 3: PAPER</text>
+          <text x="475" y="275" fill="#a7f3d0" font-size="10" text-anchor="middle">Servo Angle: 150°</text>
+
+          <!-- Flow arrows -->
+          <line x1="300" y1="40" x2="300" y2="55" stroke="#ffffff" stroke-width="2" stroke-dasharray="3 3"/>
+        </svg>
+      </div>
+
+      <div class="text-xs text-slate-300 space-y-1 bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+        <p><strong>How Option A Works Mechanically with 1 Servo:</strong></p>
+        <ol class="list-decimal list-inside space-y-1 text-slate-400 mt-1">
+          <li>The user drops the bottle/can into the top hole.</li>
+          <li>Inside, there are <strong>no tiny 8cm ramps</strong>. Instead, there is <strong>1 wide rotating chute/funnel</strong> (12 cm wide).</li>
+          <li>Before the item drops, the servo rotates the mouth of the chute to point directly into:
+            <span class="text-amber-400">Left (Plastic)</span>, 
+            <span class="text-cyan-400">Center (Metal)</span>, or 
+            <span class="text-emerald-400">Right (Paper)</span>.
+          </li>
+          <li>The item drops by pure gravity straight into that large bin. <strong>Zero jams, zero motor overload.</strong></li>
+        </ol>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

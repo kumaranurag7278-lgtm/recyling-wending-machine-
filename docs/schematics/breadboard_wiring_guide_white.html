@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Breadboard Physical Wiring Guide - Smart Recycling Vending Machine</title>
+  <style>
+    body {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 0;
+      padding: 16px;
+    }
+    .container {
+      max-width: 1020px;
+      margin: 0 auto;
+      border: 2px solid #000000;
+      padding: 16px;
+      background: #ffffff;
+    }
+    .box {
+      border: 1px solid #cbd5e1;
+      padding: 12px;
+      border-radius: 6px;
+      background: #f8fafc;
+      margin-bottom: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-top: 8px;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    th {
+      background: #e2e8f0;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div style="text-align: center; border-bottom: 2px solid #000000; padding-bottom: 8px; margin-bottom: 14px;">
+      <h2 style="margin: 0; font-size: 19px; color: #000000; text-transform: uppercase;">
+        PHYSICAL 400-POINT BREADBOARD CONNECTION GUIDE
+      </h2>
+      <p style="margin: 4px 0 0 0; font-size: 12px; color: #475569;">
+        Special Solution for <strong>Arduino Uno SMD Board (Without Pre-soldered Headers)</strong>
+      </p>
+    </div>
+
+    <!-- Solution for Missing Headers on Uno -->
+    <div class="box" style="border-left: 5px solid #dc2626; background: #fef2f2;">
+      <h3 style="margin: 0 0 6px 0; font-size: 14px; color: #b91c1c;">
+        ⚠️ AGAR UNO PAR BLACK FEMALE HEADERS NAHI HAIN TOH KYA KAREIN?
+      </h3>
+      <p style="font-size: 12px; line-height: 1.5; margin: 0 0 6px 0; color: #1e293b;">
+        Aapke bill me <strong>"Arduino Uno SMD Board"</strong> hai. Market me SMD Uno ke saath aksar <strong>Berg Strip / Male Header Pins</strong> ka ek chhota packet aata hai ya sirf empty through-holes hote hain. Isko breadboard se jodne ke <strong>2 sabse aasan tareeqe</strong> hain:
+      </p>
+      <ol style="font-size: 11px; margin: 0; padding-left: 18px; color: #334155; line-height: 1.6;">
+        <li>
+          <strong>Tareeqa 1 (Sabse Best & Strong):</strong> Uno ke packet me aayi black female header strip (ya male pin strip) ko Uno board ke holes me daal kar soldering iron se 2 minute me solder kar dein.
+        </li>
+        <li>
+          <strong>Tareeqa 2 (Bina Soldering ke):</strong> Aapke paas <strong>Male-to-Female (M-F)</strong> jumper cables hain. Jumper wire ka <strong>Male pin seedhe Uno ke hole ke andar daalo</strong> aur piche se halka sa tape ya glue lagao taaki hil na sake, aur uska doosra Female/Male end <strong>Breadboard</strong> me laga do.
+        </li>
+      </ol>
+    </div>
+
+    <!-- PHYSICAL BREADBOARD DIAGRAM (SVG) -->
+    <div style="text-align: center; margin: 15px 0;">
+      <svg width="980" height="420" viewBox="0 0 980 420" style="background:#ffffff; display: block; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 8px;">
+        
+        <!-- ================= BREADBOARD 400 TIE POINTS ================= -->
+        <!-- Breadboard Outer White Body -->
+        <rect x="30" y="30" width="920" height="350" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" />
+        
+        <!-- Power Rail Top: + (Red) & - (Blue) -->
+        <line x1="50" y1="52" x2="930" y2="52" stroke="#ef4444" stroke-width="2.5" />
+        <text x="40" y="55" fill="#ef4444" font-size="12" font-weight="bold">+</text>
+        <line x1="50" y1="72" x2="930" y2="72" stroke="#0284c7" stroke-width="2.5" />
+        <text x="40" y="76" fill="#0284c7" font-size="14" font-weight="bold">-</text>
+
+        <!-- Power Rail Bottom: + (Red) & - (Blue) -->
+        <line x1="50" y1="338" x2="930" y2="338" stroke="#ef4444" stroke-width="2.5" />
+        <text x="40" y="342" fill="#ef4444" font-size="12" font-weight="bold">+</text>
+        <line x1="50" y1="358" x2="930" y2="358" stroke="#0284c7" stroke-width="2.5" />
+        <text x="40" y="362" fill="#0284c7" font-size="14" font-weight="bold">-</text>
+
+        <!-- Center Divider Groove -->
+        <rect x="50" y="195" width="880" height="12" fill="#e2e8f0" stroke="#cbd5e1" />
+        <text x="490" y="204" fill="#94a3b8" font-size="9" text-anchor="middle">CENTER ISOLATION GROOVE (400 TIE POINT BREADBOARD)</text>
+
+        <!-- Section 1: Power Input (Rows 1-5) -->
+        <g transform="translate(60, 95)">
+          <rect x="0" y="0" width="105" height="90" rx="4" fill="#ffffff" stroke="#f59e0b" stroke-width="1.8" />
+          <text x="52" y="18" fill="#d97706" font-size="10" font-weight="bold" text-anchor="middle">1. SMPS POWER</text>
+          <text x="52" y="34" fill="#475569" font-size="8" text-anchor="middle">From DC Barrel Jack</text>
+          
+          <rect x="15" y="44" width="75" height="16" rx="2" fill="#fee2e2" stroke="#ef4444" />
+          <text x="52" y="55" fill="#dc2626" font-size="8" font-weight="bold" text-anchor="middle">RED WIRE → Top (+)</text>
+
+          <rect x="15" y="65" width="75" height="16" rx="2" fill="#e0f2fe" stroke="#0284c7" />
+          <text x="52" y="76" fill="#0284c7" font-size="8" font-weight="bold" text-anchor="middle">BLACK WIRE → Top (-)</text>
+        </g>
+
+        <!-- Section 2: ESP32-CAM Power & UART (Rows 6-11) -->
+        <g transform="translate(180, 95)">
+          <rect x="0" y="0" width="145" height="90" rx="4" fill="#ffffff" stroke="#16a34a" stroke-width="1.8" />
+          <text x="72" y="18" fill="#15803d" font-size="10" font-weight="bold" text-anchor="middle">2. ESP32-CAM TIE</text>
+          
+          <text x="12" y="36" fill="#dc2626" font-size="8" font-weight="bold">5V PIN</text>
+          <text x="55" y="36" fill="#475569" font-size="8">→ Top (+) Rail</text>
+
+          <text x="12" y="52" fill="#0284c7" font-size="8" font-weight="bold">GND PIN</text>
+          <text x="55" y="52" fill="#475569" font-size="8">→ Top (-) Rail</text>
+
+          <text x="12" y="68" fill="#7e22ce" font-size="8" font-weight="bold">U0T (TX)</text>
+          <text x="55" y="68" fill="#475569" font-size="8">→ Wire to Uno D4</text>
+
+          <text x="12" y="84" fill="#7e22ce" font-size="8" font-weight="bold">U0R (RX)</text>
+          <text x="55" y="84" fill="#475569" font-size="8">→ Wire to Uno D5</text>
+        </g>
+
+        <!-- Section 3: Servos 1 & 2 Power Bus (Rows 13-18) -->
+        <g transform="translate(340, 95)">
+          <rect x="0" y="0" width="155" height="90" rx="4" fill="#ffffff" stroke="#ea580c" stroke-width="1.8" />
+          <text x="77" y="18" fill="#c2410c" font-size="10" font-weight="bold" text-anchor="middle">3. SERVO MOTORS (SG90)</text>
+
+          <text x="10" y="36" fill="#dc2626" font-size="8" font-weight="bold">Servo 1 & 2 RED</text>
+          <text x="88" y="36" fill="#475569" font-size="8">→ Top (+) Rail</text>
+
+          <text x="10" y="52" fill="#000000" font-size="8" font-weight="bold">Servo 1 & 2 BROWN</text>
+          <text x="88" y="52" fill="#475569" font-size="8">→ Top (-) Rail</text>
+
+          <text x="10" y="68" fill="#ea580c" font-size="8" font-weight="bold">Servo 1 ORANGE</text>
+          <text x="88" y="68" fill="#475569" font-size="8">→ Wire to Uno D9</text>
+
+          <text x="10" y="84" fill="#ea580c" font-size="8" font-weight="bold">Servo 2 ORANGE</text>
+          <text x="88" y="84" fill="#475569" font-size="8">→ Wire to Uno D10</text>
+        </g>
+
+        <!-- Section 4: IR Sensor 1 (Rows 20-23) -->
+        <g transform="translate(510, 95)">
+          <rect x="0" y="0" width="130" height="90" rx="4" fill="#ffffff" stroke="#16a34a" stroke-width="1.8" />
+          <text x="65" y="18" fill="#15803d" font-size="10" font-weight="bold" text-anchor="middle">4. INTAKE IR SENSOR</text>
+
+          <text x="10" y="40" fill="#dc2626" font-size="8" font-weight="bold">VCC</text>
+          <text x="45" y="40" fill="#475569" font-size="8">→ Top (+) Rail</text>
+
+          <text x="10" y="58" fill="#0284c7" font-size="8" font-weight="bold">GND</text>
+          <text x="45" y="58" fill="#475569" font-size="8">→ Top (-) Rail</text>
+
+          <text x="10" y="76" fill="#16a34a" font-size="8" font-weight="bold">OUT</text>
+          <text x="45" y="76" fill="#475569" font-size="8">→ Wire to Uno D2</text>
+        </g>
+
+        <!-- Section 5: Buzzer & LED with 220Ω (Rows 24-27 Lower) -->
+        <g transform="translate(655, 95)">
+          <rect x="0" y="0" width="145" height="90" rx="4" fill="#ffffff" stroke="#dc2626" stroke-width="1.8" />
+          <text x="72" y="18" fill="#b91c1c" font-size="10" font-weight="bold" text-anchor="middle">5. BUZZER & RED LED</text>
+
+          <text x="10" y="38" fill="#b91c1c" font-size="8" font-weight="bold">Buzzer (+)</text>
+          <text x="65" y="38" fill="#475569" font-size="8">→ Wire to Uno D8</text>
+
+          <text x="10" y="54" fill="#0284c7" font-size="8" font-weight="bold">Buzzer (-)</text>
+          <text x="65" y="54" fill="#475569" font-size="8">→ Bottom (-) Rail</text>
+
+          <text x="10" y="70" fill="#ef4444" font-size="8" font-weight="bold">LED (+) + 220Ω</text>
+          <text x="75" y="70" fill="#475569" font-size="8">→ Wire to Uno D13</text>
+
+          <text x="10" y="86" fill="#0284c7" font-size="8" font-weight="bold">LED (-) Cathode</text>
+          <text x="75" y="86" fill="#475569" font-size="8">→ Bottom (-) Rail</text>
+        </g>
+
+        <!-- Section 6: 16x2 I2C LCD (Rows 28-30) -->
+        <g transform="translate(815, 95)">
+          <rect x="0" y="0" width="120" height="90" rx="4" fill="#ffffff" stroke="#0284c7" stroke-width="1.8" />
+          <text x="60" y="18" fill="#0369a1" font-size="10" font-weight="bold" text-anchor="middle">6. 16×2 I2C LCD</text>
+
+          <text x="10" y="36" fill="#dc2626" font-size="8" font-weight="bold">VCC</text>
+          <text x="45" y="36" fill="#475569" font-size="8">→ Top (+) Rail</text>
+
+          <text x="10" y="52" fill="#0284c7" font-size="8" font-weight="bold">GND</text>
+          <text x="45" y="52" fill="#475569" font-size="8">→ Top (-) Rail</text>
+
+          <text x="10" y="68" fill="#0284c7" font-size="8" font-weight="bold">SDA</text>
+          <text x="45" y="68" fill="#475569" font-size="8">→ Wire to Uno A4</text>
+
+          <text x="10" y="84" fill="#0284c7" font-size="8" font-weight="bold">SCL</text>
+          <text x="45" y="84" fill="#475569" font-size="8">→ Wire to Uno A5</text>
+        </g>
+
+        <!-- Lower Section: Jumper Bridges linking Top & Bottom Rails -->
+        <g transform="translate(60, 225)">
+          <rect x="0" y="0" width="875" height="95" rx="6" fill="#f1f5f9" stroke="#cbd5e1" />
+          <text x="437" y="24" fill="#0f172a" font-size="12" font-weight="bold" text-anchor="middle">
+            ARDUINO UNO SMD BOARD (PLACEMENT / WIRE INTERCONNECT)
+          </text>
+          <text x="437" y="42" fill="#475569" font-size="10" text-anchor="middle">
+            Uno board ko table par breadboard ke paas rakho. Male-to-Female Jumper wires ke Male ends breadboard me daalo, aur doosra end Uno ke holes me daalo:
+          </text>
+
+          <!-- Pin boxes showing direct mapping -->
+          <g transform="translate(45, 54)" font-size="9" font-weight="bold">
+            <!-- 5V & GND -->
+            <rect x="0" y="0" width="80" height="24" rx="3" fill="#fee2e2" stroke="#ef4444" />
+            <text x="40" y="16" fill="#b91c1c" text-anchor="middle">Uno 5V → Top (+)</text>
+
+            <rect x="90" y="0" width="85" height="24" rx="3" fill="#e0f2fe" stroke="#0284c7" />
+            <text x="132" y="16" fill="#0369a1" text-anchor="middle">Uno GND → Top (-)</text>
+
+            <!-- D2, D4, D5 -->
+            <rect x="185" y="0" width="95" height="24" rx="3" fill="#dcfce7" stroke="#16a34a" />
+            <text x="232" y="16" fill="#15803d" text-anchor="middle">Uno D2 → IR OUT</text>
+
+            <rect x="290" y="0" width="95" height="24" rx="3" fill="#f3e8ff" stroke="#9333ea" />
+            <text x="337" y="16" fill="#7e22ce" text-anchor="middle">Uno D4 → ESP32 TX</text>
+
+            <rect x="395" y="0" width="95" height="24" rx="3" fill="#f3e8ff" stroke="#9333ea" />
+            <text x="442" y="16" fill="#7e22ce" text-anchor="middle">Uno D5 → ESP32 RX</text>
+
+            <!-- D8, D9, D10, D13 -->
+            <rect x="500" y="0" width="85" height="24" rx="3" fill="#ffedd5" stroke="#ea580c" />
+            <text x="542" y="16" fill="#c2410c" text-anchor="middle">Uno D9 → Servo 1</text>
+
+            <rect x="595" y="0" width="85" height="24" rx="3" fill="#ffedd5" stroke="#ea580c" />
+            <text x="637" y="16" fill="#c2410c" text-anchor="middle">Uno D10 → Servo 2</text>
+
+            <!-- A4 & A5 -->
+            <rect x="690" y="0" width="90" height="24" rx="3" fill="#e0f2fe" stroke="#0284c7" />
+            <text x="735" y="16" fill="#0369a1" text-anchor="middle">Uno A4/A5 → LCD</text>
+          </g>
+        </g>
+
+      </svg>
+    </div>
+
+    <!-- Step-by-Step Instructions -->
+    <div style="margin-top: 10px;">
+      <h3 style="font-size: 13px; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin: 10px 0 6px 0;">
+        Kadam-dar-Kadam (Step-by-Step) Kaise Connect Karein:
+      </h3>
+      
+      <ol style="font-size: 11px; line-height: 1.7; color: #334155; padding-left: 20px; margin: 0;">
+        <li>
+          <strong>Step 1: Power Bus Setup:</strong> 5V 2A SMPS ke DC barrel jack ka <strong>Red wire</strong> breadboard ki <strong>Top Red line (+)</strong> me daalo, aur <strong>Black wire</strong> breadboard ki <strong>Top Blue line (-)</strong> me daalo. Ab poore breadboard ko 5V power mil gayi.
+        </li>
+        <li>
+          <strong>Step 2: Uno Board ko Power dena:</strong> Ek wire breadboard ke <strong>(+)</strong> se nikaal kar Uno ke <strong>5V hole</strong> me daalo, aur doosra wire <strong>(-)</strong> se nikaal kar Uno ke <strong>GND hole</strong> me daalo.
+        </li>
+        <li>
+          <strong>Step 3: Servos ko direct power dena:</strong> Dono SG90 servos ke Red wires breadboard ke <strong>(+)</strong> me aur Brown wires <strong>(-)</strong> me daalo. Servo 1 ka Orange wire Uno ke <strong>D9 hole</strong> me, aur Servo 2 ka Orange wire Uno ke <strong>D10 hole</strong> me daalo.
+        </li>
+        <li>
+          <strong>Step 4: ESP32-CAM jodhna:</strong> ESP32 ka 5V pin breadboard ke <strong>(+)</strong> me, GND pin <strong>(-)</strong> me. ESP32 ka <strong>U0T (TX)</strong> wire Uno ke <strong>D4 hole</strong> me, aur <strong>U0R (RX)</strong> wire 1k resistor lagakar Uno ke <strong>D5 hole</strong> me daalo.
+        </li>
+        <li>
+          <strong>Step 5: IR Sensor & LCD jodhna:</strong> IR sensor ka VCC/GND breadboard ke (+)/(-) me aur OUT wire Uno ke <strong>D2 hole</strong> me. 16x2 LCD ka VCC/GND (+)/(-) me aur SDA wire Uno ke <strong>A4</strong> me, SCL wire Uno ke <strong>A5</strong> me daalo.
+        </li>
+      </ol>
+    </div>
+
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accurate Wiring Schematic - Smart Recycling Vending Machine</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-6 antialiased flex flex-col items-center">
+
+  <!-- Header -->
+  <header class="w-full max-w-5xl flex flex-wrap items-center justify-between pb-4 mb-4 border-b border-slate-800 gap-3">
+    <div>
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center justify-center w-7 h-7 rounded bg-emerald-500/20 text-emerald-400 font-bold text-xs">
+          ⚡
+        </span>
+        <h1 class="text-lg md:text-xl font-bold tracking-tight text-white uppercase">
+          Accurate Master Wiring Schematic (Corrected)
+        </h1>
+      </div>
+      <p class="text-xs text-slate-400 mt-0.5">
+        Optimized for 1 IR Sensor, 2x Servos, ESP32-CAM, Uno, 16x2 I2C LCD & 5V 2A SMPS
+      </p>
+    </div>
+
+    <!-- Badges -->
+    <div class="flex items-center gap-2 text-xs">
+      <span class="px-2.5 py-1 rounded bg-blue-500/10 border border-blue-500/30 text-blue-300 font-semibold">
+        Fixed A33 → A5 SCL
+      </span>
+      <span class="px-2.5 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold">
+        1 IR Sensor Config
+      </span>
+      <span class="px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold">
+        3.3V Logic Safe
+      </span>
+    </div>
+  </header>
+
+  <!-- SVG Schematic Canvas Card -->
+  <div class="w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-2xl overflow-x-auto flex flex-col items-center">
+    
+    <svg width="1020" height="660" viewBox="0 0 1020 660" class="w-full h-auto select-none">
+      <defs>
+        <!-- Marker Arrows -->
+        <marker id="arr-red" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 2 L 8 5 L 0 8 z" fill="#ef4444" />
+        </marker>
+        <marker id="arr-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 2 L 8 5 L 0 8 z" fill="#38bdf8" />
+        </marker>
+        <marker id="arr-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 2 L 8 5 L 0 8 z" fill="#22c55e" />
+        </marker>
+        <marker id="arr-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 2 L 8 5 L 0 8 z" fill="#c084fc" />
+        </marker>
+      </defs>
+
+      <!-- ================= 1. POWER SUPPLY & DC JACK (RIGHT SIDE) ================= -->
+      <g transform="translate(860, 240)">
+        <rect x="0" y="0" width="135" height="150" rx="10" fill="#0f172a" stroke="#f59e0b" stroke-width="2.5" />
+        <rect x="10" y="10" width="115" height="32" rx="4" fill="#1e293b" />
+        <text x="67" y="31" fill="#f59e0b" font-size="11" font-weight="bold" text-anchor="middle">5V 2A SMPS</text>
+        
+        <!-- DC Female Barrel Jack & Switch -->
+        <circle cx="67" cy="65" r="14" fill="#020617" stroke="#64748b" stroke-width="2" />
+        <circle cx="67" cy="65" r="5" fill="#f59e0b" />
+        <text x="67" y="92" fill="#94a3b8" font-size="8" text-anchor="middle">DC Barrel Jack</text>
+        
+        <!-- Rocker Switch -->
+        <rect x="25" y="102" width="85" height="18" rx="3" fill="#b91c1c" stroke="#f87171" />
+        <text x="67" y="115" fill="#ffffff" font-size="8" font-weight="bold" text-anchor="middle">ROCKER SWITCH</text>
+
+        <!-- Power Terminals -->
+        <circle cx="10" cy="132" r="4" fill="#ef4444" />
+        <text x="20" y="135" fill="#ef4444" font-size="9" font-weight="bold">+5V</text>
+        <circle cx="95" cy="132" r="4" fill="#0284c7" />
+        <text x="105" y="135" fill="#38bdf8" font-size="9" font-weight="bold">GND</text>
+      </g>
+
+      <!-- ================= 2. MASTER 5V & GND BUS RAILS ================= -->
+      <!-- Red 5V Rail -->
+      <path d="M 860 372 L 800 372 L 800 24 L 200 24 L 200 70" fill="none" stroke="#ef4444" stroke-width="3.5" />
+      <text x="540" y="18" fill="#f87171" font-size="10" font-weight="bold" text-anchor="middle">🔴 MASTER +5V POWER BUS (FROM 5V 2A SMPS)</text>
+
+      <!-- Blue Common GND Rail -->
+      <path d="M 955 390 L 955 640 L 190 640 L 190 560" fill="none" stroke="#0284c7" stroke-width="3.5" />
+      <text x="540" y="652" fill="#38bdf8" font-size="10" font-weight="bold" text-anchor="middle">🔵 COMMON GROUND BUS (GND) — TIED TOGETHER ACROSS ALL MODULES</text>
+
+
+      <!-- ================= 3. ARDUINO UNO (CENTER MASTER) ================= -->
+      <g transform="translate(260, 70)">
+        <!-- Uno Board Outline -->
+        <rect x="0" y="0" width="260" height="490" rx="12" fill="#0c4a6e" stroke="#38bdf8" stroke-width="2.5" />
+        
+        <!-- Header -->
+        <rect x="15" y="12" width="230" height="40" rx="6" fill="#0369a1" />
+        <text x="130" y="34" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle">ARDUINO UNO R3</text>
+        <text x="130" y="46" fill="#bae6fd" font-size="9" text-anchor="middle">Master System Controller</text>
+
+        <!-- MCU Chip Graphic -->
+        <rect x="95" y="170" width="70" height="180" rx="4" fill="#0f172a" stroke="#64748b" stroke-width="1.5" />
+        <text x="130" y="265" fill="#94a3b8" font-size="11" font-weight="bold" text-anchor="middle" transform="rotate(-90 130 265)">ATMEGA328P</text>
+
+        <!-- PINS LEFT (Sensors & Peripherals) -->
+        <g font-size="11" font-weight="bold">
+          <!-- Pin D2: IR 1 -->
+          <circle cx="10" cy="90" r="5" fill="#22c55e" />
+          <text x="22" y="94" fill="#ffffff">D2</text>
+          <text x="48" y="94" fill="#86efac" font-size="9" font-weight="normal">Intake IR Sensor</text>
+
+          <!-- Pin D8: Buzzer -->
+          <circle cx="10" cy="180" r="5" fill="#f43f5e" />
+          <text x="22" y="184" fill="#ffffff">D8</text>
+          <text x="48" y="184" fill="#fda4af" font-size="9" font-weight="normal">Buzzer Trigger</text>
+
+          <!-- Pin D13: LED -->
+          <circle cx="10" cy="240" r="5" fill="#ef4444" />
+          <text x="22" y="244" fill="#ffffff">D13</text>
+          <text x="52" y="244" fill="#fca5a5" font-size="9" font-weight="normal">Status Red LED</text>
+
+          <!-- Pin A4: SDA -->
+          <circle cx="10" cy="380" r="5" fill="#38bdf8" />
+          <text x="22" y="384" fill="#ffffff">A4</text>
+          <text x="48" y="384" fill="#7dd3fc" font-size="9" font-weight="normal">I2C SDA (LCD)</text>
+
+          <!-- Pin A5: SCL (CORRECTED FROM A33!) -->
+          <circle cx="10" cy="430" r="5" fill="#38bdf8" />
+          <text x="22" y="434" fill="#ffffff">A5</text>
+          <text x="48" y="434" fill="#7dd3fc" font-size="9" font-weight="normal">I2C SCL (LCD)</text>
+          <rect x="135" y="422" width="115" height="18" rx="3" fill="#047857" />
+          <text x="192" y="434" fill="#a7f3d0" font-size="8" font-weight="bold" text-anchor="middle">✓ FIXED (Was A33)</text>
+        </g>
+
+        <!-- PINS RIGHT (ESP32-CAM & Servos) -->
+        <g font-size="11" font-weight="bold" text-anchor="end">
+          <!-- 5V In & GND -->
+          <circle cx="250" cy="80" r="5" fill="#ef4444" />
+          <text x="240" y="84" fill="#ef4444">5V</text>
+
+          <circle cx="250" cy="115" r="5" fill="#0284c7" />
+          <text x="240" y="119" fill="#38bdf8">GND</text>
+
+          <!-- D4: RX from ESP32 TX -->
+          <circle cx="250" cy="175" r="5" fill="#c084fc" />
+          <text x="240" y="179" fill="#ffffff">D4</text>
+          <text x="215" y="179" fill="#e9d5ff" font-size="9" font-weight="normal">SoftRX (from ESP32)</text>
+
+          <!-- D5: TX to ESP32 RX -->
+          <circle cx="250" cy="225" r="5" fill="#c084fc" />
+          <text x="240" y="229" fill="#ffffff">D5</text>
+          <text x="215" y="229" fill="#e9d5ff" font-size="9" font-weight="normal">SoftTX (to ESP32)</text>
+
+          <!-- D9: Servo 1 PWM -->
+          <circle cx="250" cy="320" r="5" fill="#f59e0b" />
+          <text x="240" y="324" fill="#ffffff">D9</text>
+          <text x="215" y="324" fill="#fed7aa" font-size="9" font-weight="normal">Servo 1 (Flap A)</text>
+
+          <!-- D10: Servo 2 PWM -->
+          <circle cx="250" cy="390" r="5" fill="#f59e0b" />
+          <text x="240" y="394" fill="#ffffff">D10</text>
+          <text x="215" y="394" fill="#fed7aa" font-size="9" font-weight="normal">Servo 2 (Flap B)</text>
+        </g>
+      </g>
+
+      <!-- Arduino Power Tap -->
+      <path d="M 200 150 L 260 150" fill="none" stroke="#ef4444" stroke-width="2.5" />
+      <path d="M 190 185 L 260 185" fill="none" stroke="#0284c7" stroke-width="2.5" />
+
+
+      <!-- ================= 4. LEFT SIDE: SENSORS & USER INTERFACE ================= -->
+      
+      <!-- 4A. Intake IR Obstacle Sensor (Only 1 IR needed!) -->
+      <g transform="translate(30, 60)">
+        <rect x="0" y="0" width="170" height="90" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="2" />
+        <text x="85" y="20" fill="#60a5fa" font-size="11" font-weight="bold" text-anchor="middle">INTAKE IR SENSOR (HW-201)</text>
+        <text x="85" y="33" fill="#94a3b8" font-size="8" text-anchor="middle">Detects when item is placed on tray</text>
+
+        <!-- Sensor Terminals -->
+        <circle cx="160" cy="50" r="4" fill="#ef4444" />
+        <text x="150" y="53" fill="#fca5a5" font-size="9" text-anchor="end">VCC</text>
+
+        <circle cx="160" cy="65" r="4" fill="#0284c7" />
+        <text x="150" y="68" fill="#7dd3fc" font-size="9" text-anchor="end">GND</text>
+
+        <circle cx="160" cy="80" r="4" fill="#22c55e" />
+        <text x="150" y="83" fill="#86efac" font-size="9" font-weight="bold" text-anchor="end">OUT</text>
+      </g>
+      <!-- IR Wires -->
+      <path d="M 190 110 L 200 110 L 200 24" fill="none" stroke="#ef4444" stroke-width="2" /> <!-- VCC -->
+      <path d="M 190 125 L 190 640" fill="none" stroke="#0284c7" stroke-width="2" /> <!-- GND -->
+      <path d="M 190 140 L 250 140 L 250 160 L 270 160" fill="none" stroke="#22c55e" stroke-width="2.5" marker-end="url(#arr-green)" /> <!-- OUT to D2 -->
+
+
+      <!-- 4B. 10mm Buzzer (with 220Ω resistor) -->
+      <g transform="translate(30, 185)">
+        <rect x="0" y="0" width="170" height="70" rx="8" fill="#1e293b" stroke="#f43f5e" stroke-width="1.8" />
+        <text x="85" y="20" fill="#f87171" font-size="11" font-weight="bold" text-anchor="middle">10mm BUZZER</text>
+        <circle cx="45" cy="45" r="14" fill="#0f172a" stroke="#64748b" stroke-width="1.5" />
+        <circle cx="45" cy="45" r="4" fill="#334155" />
+        <text x="150" y="42" fill="#fca5a5" font-size="9" text-anchor="end">+ (via 220Ω)</text>
+        <text x="150" y="58" fill="#7dd3fc" font-size="9" text-anchor="end">- (GND)</text>
+        <circle cx="160" cy="39" r="4" fill="#f43f5e" />
+        <circle cx="160" cy="55" r="4" fill="#0284c7" />
+      </g>
+      <!-- Buzzer Wires -->
+      <path d="M 190 224 L 270 250" fill="none" stroke="#f43f5e" stroke-width="2" /> <!-- D8 -->
+      <path d="M 190 240 L 190 640" fill="none" stroke="#0284c7" stroke-width="2" /> <!-- GND -->
+
+
+      <!-- 4C. 5mm Red Status LED (with 220Ω resistor) -->
+      <g transform="translate(30, 280)">
+        <rect x="0" y="0" width="170" height="70" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="1.8" />
+        <text x="85" y="20" fill="#fca5a5" font-size="11" font-weight="bold" text-anchor="middle">5mm RED STATUS LED</text>
+        <!-- LED symbol -->
+        <circle cx="45" cy="46" r="10" fill="#ef4444" />
+        <text x="150" y="42" fill="#fca5a5" font-size="9" text-anchor="end">Anode + (220Ω)</text>
+        <text x="150" y="58" fill="#7dd3fc" font-size="9" text-anchor="end">Cathode - (GND)</text>
+        <circle cx="160" cy="39" r="4" fill="#ef4444" />
+        <circle cx="160" cy="55" r="4" fill="#0284c7" />
+      </g>
+      <!-- LED Wires -->
+      <path d="M 190 319 L 270 310" fill="none" stroke="#ef4444" stroke-width="2" /> <!-- D13 -->
+      <path d="M 190 335 L 190 640" fill="none" stroke="#0284c7" stroke-width="2" /> <!-- GND -->
+
+
+      <!-- 4D. 16x2 LCD Display with I2C Backpack -->
+      <g transform="translate(30, 380)">
+        <rect x="0" y="0" width="170" height="155" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="2" />
+        <rect x="15" y="10" width="140" height="42" rx="3" fill="#0284c7" />
+        <text x="85" y="28" fill="#ffffff" font-size="10" font-weight="bold" text-anchor="middle">16x2 LCD DISPLAY</text>
+        <text x="85" y="42" fill="#e0f2fe" font-size="8" text-anchor="middle">"DETECTED: METAL"</text>
+        
+        <!-- I2C Backpack (PCF8574) -->
+        <rect x="15" y="60" width="140" height="85" rx="4" fill="#064e3b" stroke="#10b981" />
+        <text x="85" y="78" fill="#34d399" font-size="10" font-weight="bold" text-anchor="middle">I2C BACKPACK (PCF8574)</text>
+
+        <!-- 4 Pins -->
+        <g font-size="9" fill="#e2e8f0">
+          <text x="145" y="96" text-anchor="end">VCC (+5V)</text> <circle cx="152" cy="93" r="3.5" fill="#ef4444" />
+          <text x="145" y="111" text-anchor="end">GND</text> <circle cx="152" cy="108" r="3.5" fill="#0284c7" />
+          <text x="145" y="126" text-anchor="end" fill="#7dd3fc" font-weight="bold">SDA (A4)</text> <circle cx="152" cy="123" r="3.5" fill="#38bdf8" />
+          <text x="145" y="141" text-anchor="end" fill="#7dd3fc" font-weight="bold">SCL (A5)</text> <circle cx="152" cy="138" r="3.5" fill="#38bdf8" />
+        </g>
+      </g>
+      <!-- LCD Wires to Arduino A4 / A5 -->
+      <path d="M 185 473 L 200 473 L 200 24" fill="none" stroke="#ef4444" stroke-width="2" /> <!-- VCC -->
+      <path d="M 185 488 L 190 488 L 190 640" fill="none" stroke="#0284c7" stroke-width="2" /> <!-- GND -->
+      <path d="M 185 503 L 270 450" fill="none" stroke="#38bdf8" stroke-width="2.5" /> <!-- SDA -> A4 -->
+      <path d="M 185 518 L 270 500" fill="none" stroke="#38bdf8" stroke-width="2.5" /> <!-- SCL -> A5 -->
+
+
+      <!-- ================= 5. RIGHT SIDE: ESP32-CAM & SERVOS ================= -->
+
+      <!-- 5A. ESP32-CAM Module (AI Inference) -->
+      <g transform="translate(600, 50)">
+        <rect x="0" y="0" width="220" height="175" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="2.5" />
+        <rect x="15" y="12" width="190" height="30" rx="4" fill="#047857" />
+        <text x="110" y="32" fill="#ffffff" font-size="12" font-weight="bold" text-anchor="middle">ESP32-CAM (AI BRAIN)</text>
+        
+        <!-- OV2640 Camera Lens -->
+        <circle cx="150" cy="105" r="26" fill="#020617" stroke="#4ade80" stroke-width="2" />
+        <circle cx="150" cy="105" r="10" fill="#1e293b" />
+        <text x="150" y="145" fill="#a7f3d0" font-size="8" text-anchor="middle">OV2640 LENS</text>
+
+        <!-- Pins on Left of ESP32 -->
+        <g font-size="9" fill="#ffffff">
+          <circle cx="12" cy="62" r="4" fill="#ef4444" />
+          <text x="22" y="65" fill="#fca5a5" font-weight="bold">5V (SMPS)</text>
+
+          <circle cx="12" cy="85" r="4" fill="#0284c7" />
+          <text x="22" y="88" fill="#7dd3fc" font-weight="bold">GND</text>
+
+          <circle cx="12" cy="115" r="4" fill="#c084fc" />
+          <text x="22" y="118" fill="#e9d5ff">U0T (TX)</text>
+
+          <circle cx="12" cy="145" r="4" fill="#c084fc" />
+          <text x="22" y="148" fill="#e9d5ff">U0R (RX)</text>
+        </g>
+      </g>
+
+      <!-- ESP32 Power Connections -->
+      <path d="M 612 112 L 612 24" fill="none" stroke="#ef4444" stroke-width="2.5" />
+      <path d="M 612 135 L 560 135 L 560 640" fill="none" stroke="#0284c7" stroke-width="2.5" />
+
+      <!-- UART TX/RX Interconnect -->
+      <!-- ESP32 U0T (TX 3.3V) to Arduino D4 (SoftRX) -->
+      <path d="M 612 165 L 510 245" fill="none" stroke="#c084fc" stroke-width="2.5" marker-end="url(#arr-purple)" />
+      <text x="560" y="195" fill="#c084fc" font-size="9" font-weight="bold">TX → D4</text>
+
+      <!-- Arduino D5 (SoftTX 5V) to ESP32 U0R (RX 3.3V) with 1k/2k Divider -->
+      <path d="M 510 295 L 575 295 L 575 195 L 612 195" fill="none" stroke="#a855f7" stroke-width="2.5" />
+      <!-- Resistor divider box -->
+      <rect x="540" y="250" width="70" height="30" rx="3" fill="#0f172a" stroke="#a855f7" stroke-width="1.2" />
+      <text x="575" y="264" fill="#e9d5ff" font-size="7" font-weight="bold" text-anchor="middle">1kΩ + 2kΩ</text>
+      <text x="575" y="274" fill="#c084fc" font-size="7" text-anchor="middle">3.3V Divider</text>
+
+
+      <!-- 5B. Servo 1 (Plastic Deflection Flap) -->
+      <g transform="translate(600, 245)">
+        <rect x="0" y="0" width="220" height="100" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+        <text x="110" y="22" fill="#fbbf24" font-size="11" font-weight="bold" text-anchor="middle">SERVO 1 (SG90 - PLASTIC FLAP)</text>
+        
+        <!-- Servo graphic -->
+        <rect x="15" y="35" width="45" height="50" rx="3" fill="#2563eb" />
+        <circle cx="37" cy="48" r="8" fill="#ffffff" />
+        <rect x="25" y="46" width="40" height="4" fill="#ffffff" />
+        
+        <!-- Pins -->
+        <g font-size="9" fill="#e2e8f0">
+          <circle cx="100" cy="48" r="4" fill="#f59e0b" />
+          <text x="112" y="51" fill="#fed7aa" font-weight="bold">PWM Signal (Orange)</text>
+          
+          <circle cx="100" cy="68" r="4" fill="#ef4444" />
+          <text x="112" y="71" fill="#fca5a5">5V (Red Wire)</text>
+
+          <circle cx="100" cy="88" r="4" fill="#78350f" />
+          <text x="112" y="91" fill="#cbd5e1">GND (Brown Wire)</text>
+        </g>
+      </g>
+      <!-- Servo 1 Wires -->
+      <path d="M 510 390 L 700 293" fill="none" stroke="#f59e0b" stroke-width="2.5" /> <!-- PWM to D9 -->
+      <path d="M 700 313 L 800 313 L 800 24" fill="none" stroke="#ef4444" stroke-width="2" /> <!-- 5V to SMPS -->
+      <path d="M 700 333 L 780 333 L 780 640" fill="none" stroke="#0284c7" stroke-width="2" /> <!-- GND -->
+
+
+      <!-- 5C. Servo 2 (Metal vs Paper Selector Flap) -->
+      <g transform="translate(600, 365)">
+        <rect x="0" y="0" width="220" height="100" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+        <text x="110" y="22" fill="#fbbf24" font-size="11" font-weight="bold" text-anchor="middle">SERVO 2 (SG90 - METAL/PAPER FLAP)</text>
+        
+        <!-- Servo graphic -->
+        <rect x="15" y="35" width="45" height="50" rx="3" fill="#2563eb" />
+        <circle cx="37" cy="48" r="8" fill="#ffffff" />
+        <rect x="25" y="46" width="40" height="4" fill="#ffffff" />
+        
+        <!-- Pins -->
+        <g font-size="9" fill="#e2e8f0">
+          <circle cx="100" cy="48" r="4" fill="#f59e0b" />
+          <text x="112" y="51" fill="#fed7aa" font-weight="bold">PWM Signal (Orange)</text>
+          
+          <circle cx="100" cy="68" r="4" fill="#ef4444" />
+          <text x="112" y="71" fill="#fca5a5">5V (Red Wire)</text>
+
+          <circle cx="100" cy="88" r="4" fill="#78350f" />
+          <text x="112" y="91" fill="#cbd5e1">GND (Brown Wire)</text>
+        </g>
+      </g>
+      <!-- Servo 2 Wires -->
+      <path d="M 510 460 L 700 413" fill="none" stroke="#f59e0b" stroke-width="2.5" /> <!-- PWM to D10 -->
+      <path d="M 700 433 L 800 433 L 800 24" fill="none" stroke="#ef4444" stroke-width="2" /> <!-- 5V to SMPS -->
+      <path d="M 700 453 L 780 453 L 780 640" fill="none" stroke="#0284c7" stroke-width="2" /> <!-- GND -->
+
+    </svg>
+
+  </div>
+
+  <!-- Legend & Verification Table -->
+  <div class="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 text-xs">
+    
+    <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+      <div class="flex items-center gap-1.5 font-bold text-amber-400 mb-1">
+        <span>🔧</span> Correction 1: Typo "A33" Fixed
+      </div>
+      <p class="text-[11px] text-slate-300 leading-snug">
+        In your reference image, SCL was mistakenly written as <strong>A33 SCL</strong>. Arduino Uno has no pin A33. We corrected it to <strong>Pin A5 (SCL)</strong> and <strong>Pin A4 (SDA)</strong>.
+      </p>
+    </div>
+
+    <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+      <div class="flex items-center gap-1.5 font-bold text-emerald-400 mb-1">
+        <span>🎯</span> Correction 2: 1 IR Sensor Optimized
+      </div>
+      <p class="text-[11px] text-slate-300 leading-snug">
+        Since you have <strong>1 IR sensor</strong>, it is wired to <strong>Pin D2</strong> (Intake). The exit chute detection is handled by a 2.5s non-blocking timer in code.
+      </p>
+    </div>
+
+    <div class="p-3 bg-slate-900 border border-slate-800 rounded-xl">
+      <div class="flex items-center gap-1.5 font-bold text-purple-400 mb-1">
+        <span>⚡</span> Correction 3: 3.3V Logic Safe
+      </div>
+      <p class="text-[11px] text-slate-300 leading-snug">
+        Arduino TX (5V) connects to ESP32 RX (3.3V) through a simple 1kΩ / 2kΩ resistor divider from your kit to protect the ESP32-CAM chip from voltage damage.
+      </p>
+    </div>
+
+  </div>
+
+</body>
+</html>
