@@ -99,7 +99,9 @@ void setup() {
   digitalWrite(PIN_BUZZER, LOW);
   digitalWrite(PIN_LED_STATUS, LOW);
 
-  // Initialize LCD
+  // Initialize LCD with Safe I2C Timeout (prevents hanging if I2C wire jiggles)
+  Wire.begin();
+  Wire.setWireTimeout(25000, true);
   lcd.init();
   lcd.backlight();
   lcd.clear();
